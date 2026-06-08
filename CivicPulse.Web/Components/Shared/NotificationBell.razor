@@ -1,0 +1,90 @@
+@inject INotificationService NotificationService
+@inject IJSRuntime JS
+
+<div class="cp-notification-bell" @onclick="ToggleDropdown">
+    <i class="bi bi-bell" style="font-size: 1.2rem;"></i>
+    @if (UnreadCount > 0)
+    {
+        <span class="cp-notification-badge">@UnreadCount</span>
+    }
+
+    @if (ShowDropdown)
+    {
+        <div class="cp-notification-dropdown">
+            <div class="cp-card-header" style="padding: 12px 16px; border-bottom: 1px solid var(--cp-border); margin-bottom: 0;">
+                <span>Notifications</span>
+                <button class="cp-btn cp-btn-ghost cp-btn-sm" @onclick="MarkAllRead">Mark all read</button>
+            </div>
+            @if (Notifications.Count == 0)
+            {
+                <div style="padding: 24px; text-align: center; color: var(--cp-text-muted);">No notifications</div>
+            }
+            else
+            {
+                @foreach (var n in Notifications)
+                {
+                    <div class="cp-notification-item @(n.IsRead ? "" : "unread")" @onclick="() => MarkRead(n.Id)">
+                        <div class="cp-notification-title">@n.Title</div>
+                        <div class="cp-notification-body">@n.Body</div>
+                        <div class="cp-notification-time">@n.CreatedAt.ToString("g")</div>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int UserId { get; set; }
+    [Parameter] public EventCallback OnNotificationRead { get; set; }
+
+    private int UnreadCount;
+    private List<NotificationDto> Notifications = new();
+    private bool ShowDropdown;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNotifications();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var timer = new System.Threading.Timer(async _ =>
+            {
+                await LoadNotifications();
+                await InvokeAsync(StateHasChanged);
+            }, null, 30000, 30000);
+        }
+    }
+
+    private async Task LoadNotifications()
+    {
+        try
+        {
+            Notifications = await NotificationService.GetUnreadAsync(UserId);
+            UnreadCount = Notifications.Count(n => !n.IsRead);
+        }
+        catch { }
+    }
+
+    private void ToggleDropdown()
+    {
+        ShowDropdown = !ShowDropdown;
+    }
+
+    private async Task MarkRead(int id)
+    {
+        await NotificationService.MarkAsReadAsync(id, UserId);
+        await LoadNotifications();
+        await OnNotificationRead.InvokeAsync();
+    }
+
+    private async Task MarkAllRead()
+    {
+        await NotificationService.MarkAllAsReadAsync(UserId);
+        await LoadNotifications();
+        await OnNotificationRead.InvokeAsync();
+    }
+}

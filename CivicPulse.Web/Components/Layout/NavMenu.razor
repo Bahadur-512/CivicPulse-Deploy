@@ -1,0 +1,59 @@
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="cp-sidebar-nav">
+    @if (IsAdmin)
+    {
+        <NavLink class="cp-nav-item" href="/admin/dashboard" Match="NavLinkMatch.All">
+            <i class="bi bi-speedometer2"></i> <span>Dashboard</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/admin/complaints" Match="NavLinkMatch.All">
+            <i class="bi bi-list-task"></i> <span>Manage Complaints</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/admin/sla" Match="NavLinkMatch.All">
+            <i class="bi bi-clock"></i> <span>SLA Tracking</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/admin/users" Match="NavLinkMatch.All">
+            <i class="bi bi-people"></i> <span>User Management</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/admin/categories" Match="NavLinkMatch.All">
+            <i class="bi bi-tags"></i> <span>Categories</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/admin/feedback" Match="NavLinkMatch.All">
+            <i class="bi bi-chat-square-text"></i> <span>Feedback</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/admin/audit" Match="NavLinkMatch.All">
+            <i class="bi bi-journal-text"></i> <span>Audit Log</span>
+        </NavLink>
+        <hr style="border-color: rgba(255,255,255,.1); margin: 8px 16px;" />
+    }
+    @if (IsAuthenticated)
+    {
+        <NavLink class="cp-nav-item" href="/citizen/dashboard" Match="NavLinkMatch.All">
+            <i class="bi bi-house"></i> <span>Dashboard</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/citizen/submit" Match="NavLinkMatch.All">
+            <i class="bi bi-plus-circle"></i> <span>Submit Complaint</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/citizen/complaints" Match="NavLinkMatch.All">
+            <i class="bi bi-file-text"></i> <span>My Complaints</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/citizen/notifications" Match="NavLinkMatch.All">
+            <i class="bi bi-bell"></i> <span>Notifications</span>
+        </NavLink>
+    }
+    else
+    {
+        <NavLink class="cp-nav-item" href="/login" Match="NavLinkMatch.All">
+            <i class="bi bi-box-arrow-in-right"></i> <span>Log In</span>
+        </NavLink>
+        <NavLink class="cp-nav-item" href="/register" Match="NavLinkMatch.All">
+            <i class="bi bi-person-plus"></i> <span>Register</span>
+        </NavLink>
+    }
+</div>
+
+@code {
+    [Parameter] public bool IsAuthenticated { get; set; }
+    [Parameter] public bool IsAdmin { get; set; }
+}

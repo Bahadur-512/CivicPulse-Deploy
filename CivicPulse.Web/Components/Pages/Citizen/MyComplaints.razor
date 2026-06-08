@@ -1,0 +1,460 @@
+@page "/citizen/complaints"
+@layout CitizenLayout
+@attribute [Authorize(Policy = "CitizenOnly")]
+@inject IComplaintService ComplaintService
+@inject ICategoryService CategoryService
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Navigation
+
+<div class="mc-page">
+
+    <!-- PAGE HEADER (sticky) -->
+    <div class="mc-page-header">
+        <div class="mc-header-left">
+            <h1 class="mc-page-title">
+                <i class="bi bi-card-list"></i>
+                My Complaints
+            </h1>
+            <span class="mc-total-badge">@Result.TotalCount total</span>
+        </div>
+        <div class="mc-header-right">
+            <div class="mc-view-toggle">
+                <button class="mc-toggle-btn @(ViewMode == "table" ? "active" : "")"
+                        @onclick='() => ViewMode = "table"' title="Table View">
+                    <i class="bi bi-table"></i>
+                </button>
+                <button class="mc-toggle-btn @(ViewMode == "card" ? "active" : "")"
+                        @onclick='() => ViewMode = "card"' title="Card View">
+                    <i class="bi bi-grid-3x3-gap"></i>
+                </button>
+            </div>
+            <a href="/citizen/submit" class="mc-submit-btn">
+                <i class="bi bi-plus-circle-fill"></i>
+                Submit Complaint
+            </a>
+        </div>
+    </div>
+
+    <!-- SEARCH & FILTER BAR (sticky) -->
+    <div class="mc-filter-bar">
+        <div class="mc-search-wrapper">
+            <i class="bi bi-search mc-search-icon"></i>
+            <input class="mc-search-input"
+                   type="text"
+                   placeholder="Search by title or complaint number..."
+                   @bind="SearchTerm"
+                   @bind:event="oninput" />
+            @if (!string.IsNullOrEmpty(SearchTerm))
+            {
+                <button class="mc-search-clear" @onclick="ClearSearch">
+                    <i class="bi bi-x"></i>
+                </button>
+            }
+        </div>
+
+        <div class="mc-filter-selects">
+            <FilterDropdown Open="@_statusOpen"
+                            OpenChanged="(bool v) => _statusOpen = v"
+                            Placeholder="Status"
+                            AllLabel="Status"
+                            SelectedValue="@FilterStatus"
+                            SelectedLabel="@FilterStatus"
+                            Options="@StatusOptions"
+                            OnSelectionChanged="OnStatusFilterChanged"
+                            IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><polygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'/></svg>" />
+
+            <FilterDropdown Open="@_categoryOpen"
+                            OpenChanged="(bool v) => _categoryOpen = v"
+                            Placeholder="Categories"
+                            AllLabel="Categories"
+                            SelectedValue="@FilterCategory?.ToString()"
+                            SelectedLabel="@GetCategoryName(FilterCategory)"
+                            Options="@CategoryOptions"
+                            OnSelectionChanged="OnCategoryFilterChanged"
+                            Scrollable="true"
+                            IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><path d='M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z'/><line x1='7' y1='7' x2='7.01' y2='7'/></svg>" />
+
+            <FilterDropdown Open="@_priorityOpen"
+                            OpenChanged="(bool v) => _priorityOpen = v"
+                            Placeholder="Priorities"
+                            AllLabel="Priorities"
+                            SelectedValue="@FilterPriority"
+                            SelectedLabel="@FilterPriority"
+                            Options="@PriorityOptions"
+                            OnSelectionChanged="OnPriorityFilterChanged"
+                            IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><circle cx='12' cy='12' r='10'/><polyline points='12 6 12 12 16 14'/></svg>" />
+        </div>
+
+        <div class="mc-filter-actions">
+            <button class="mc-search-btn" @onclick="ApplyFilter">
+                <i class="bi bi-search"></i> Search
+            </button>
+            <button class="mc-clear-btn" @onclick="ClearAllFilters">
+                <i class="bi bi-x-circle"></i> Clear
+            </button>
+        </div>
+    </div>
+
+    <!-- ACTIVE FILTER CHIPS -->
+    @if (HasActiveFilters)
+    {
+        <div class="mc-active-filters">
+            <span class="mc-filter-chips-label">Active filters:</span>
+            @if (!string.IsNullOrEmpty(SearchTerm))
+            {
+                <span class="mc-filter-chip">
+                    Search: "@SearchTerm"
+                    <button @onclick="ClearSearchChip"><i class="bi bi-x"></i></button>
+                </span>
+            }
+            @if (!string.IsNullOrEmpty(FilterStatus))
+            {
+                <span class="mc-filter-chip">
+                    Status: @GetStatusLabel(FilterStatus)
+                    <button @onclick="() => { FilterStatus = null; ApplyFilter(); }"><i class="bi bi-x"></i></button>
+                </span>
+            }
+            @if (FilterCategory.HasValue)
+            {
+                <span class="mc-filter-chip">
+                    Category: @GetCategoryName(FilterCategory.Value)
+                    <button @onclick="() => { FilterCategory = null; ApplyFilter(); }"><i class="bi bi-x"></i></button>
+                </span>
+            }
+        </div>
+    }
+
+    <!-- CONTENT -->
+    @if (IsLoading)
+    {
+        <div class="mc-card">
+            @for (int i = 0; i < 6; i++)
+            {
+                <div class="mc-skeleton-row">
+                    <div class="skeleton" style="width:100px; height:14px;"></div>
+                    <div class="skeleton" style="flex:1; height:14px;"></div>
+                    <div class="skeleton" style="width:90px; height:22px; border-radius:20px;"></div>
+                    <div class="skeleton" style="width:70px; height:22px; border-radius:6px;"></div>
+                    <div class="skeleton" style="width:130px; height:8px;"></div>
+                    <div class="skeleton" style="width:70px; height:14px;"></div>
+                    <div class="skeleton" style="width:80px; height:32px; border-radius:8px;"></div>
+                </div>
+            }
+        </div>
+    }
+    else if (!Result.Items.Any())
+    {
+        <div class="mc-empty-state">
+            <div class="mc-empty-illustration">
+                <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+                    <circle cx="60" cy="60" r="56" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="2"/>
+                    <path d="M40 45h40M40 55h30M40 65h20" stroke="#93C5FD" stroke-width="3" stroke-linecap="round"/>
+                    <circle cx="78" cy="72" r="16" fill="#DBEAFE" stroke="#3B82F6" stroke-width="2"/>
+                    <path d="M73 72h10M78 67v10" stroke="#3B82F6" stroke-width="2.5" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <h3>No complaints found</h3>
+            <p>@(HasActiveFilters ? "No complaints match your current filters. Try clearing them." : "You haven't submitted any complaints yet.")</p>
+            @if (HasActiveFilters)
+            {
+                <button class="mc-clear-filters-btn" @onclick="ClearAllFilters">Clear All Filters</button>
+            }
+            else
+            {
+                <a href="/citizen/submit" class="mc-submit-btn">
+                    <i class="bi bi-plus-circle"></i> Submit Your First Complaint
+                </a>
+            }
+        </div>
+    }
+    else if (ViewMode == "table")
+    {
+        <!-- TABLE VIEW -->
+        <div class="mc-card mc-table-card">
+            <table class="mc-table">
+                <thead>
+                    <tr>
+                        <th class="mc-th-num">#</th>
+                        <th class="mc-th-title">Title</th>
+                        <th class="mc-th-cat">Category</th>
+                        <th class="mc-th-status">Status</th>
+                        <th class="mc-th-priority">Priority</th>
+                        <th class="mc-th-sla">SLA</th>
+                        <th class="mc-th-date">Submitted</th>
+                        <th class="mc-th-action"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var complaint in Result.Items)
+                    {
+                        <tr class="mc-table-row @GetRowClass(complaint)">
+                            <td>
+                                <a href="/citizen/complaints/@complaint.Id" class="mc-complaint-num">
+                                    @complaint.ComplaintNumber
+                                </a>
+                            </td>
+                            <td>
+                                <span class="mc-title-cell" title="@complaint.Title">
+                                    @TruncateTitle(complaint.Title, 48)
+                                </span>
+                            </td>
+                            <td>
+                                <span class="mc-cat-chip" style="--cat-color: @GetCategoryColor(complaint.CategoryName)">
+                                    @complaint.CategoryName
+                                </span>
+                            </td>
+                            <td>
+                                <span class="mc-status-badge mc-status-@GetStatusClass(complaint.Status)">
+                                    <span class="mc-status-dot"></span>
+                                    @GetStatusLabel(complaint.Status)
+                                </span>
+                            </td>
+                            <td>
+                                <span class="mc-priority-chip mc-priority-@complaint.Priority.ToString().ToLower()">
+                                    @GetPriorityIcon(complaint.Priority) @complaint.Priority.ToString()
+                                </span>
+                            </td>
+                            <td class="mc-sla-cell">
+                                <SlaProgressBar SlaDeadline="complaint.SlaDeadline" CreatedAt="complaint.CreatedAt" />
+                            </td>
+                            <td>
+                                <span class="mc-date-cell">@complaint.CreatedAt.ToString("MMM dd, yyyy")</span>
+                            </td>
+                            <td>
+                                <a href="/citizen/complaints/@complaint.Id" class="mc-view-btn">
+                                    View <i class="bi bi-chevron-right"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <!-- CARD VIEW -->
+        <div class="mc-card-grid">
+            @foreach (var complaint in Result.Items)
+            {
+                <div class="mc-complaint-card @GetRowClass(complaint)">
+                    <div class="mc-card-top">
+                        <span class="mc-complaint-num">@complaint.ComplaintNumber</span>
+                        <span class="mc-status-badge mc-status-@GetStatusClass(complaint.Status)">
+                            <span class="mc-status-dot"></span>
+                            @GetStatusLabel(complaint.Status)
+                        </span>
+                    </div>
+                    <h3 class="mc-card-title" title="@complaint.Title">
+                        @TruncateTitle(complaint.Title, 60)
+                    </h3>
+                    <div class="mc-card-meta">
+                        <span class="mc-cat-chip" style="--cat-color: @GetCategoryColor(complaint.CategoryName)">
+                            @complaint.CategoryName
+                        </span>
+                        <span class="mc-priority-chip mc-priority-@complaint.Priority.ToString().ToLower()">
+                            @GetPriorityIcon(complaint.Priority) @complaint.Priority.ToString()
+                        </span>
+                    </div>
+                    <div class="mc-card-sla">
+                        <SlaProgressBar SlaDeadline="complaint.SlaDeadline" CreatedAt="complaint.CreatedAt" />
+                    </div>
+                    <div class="mc-card-footer">
+                        <span class="mc-date-cell"><i class="bi bi-calendar3"></i> @complaint.CreatedAt.ToString("MMM dd, yyyy")</span>
+                        <a href="/citizen/complaints/@complaint.Id" class="mc-view-btn">
+                            View Details <i class="bi bi-arrow-right"></i>
+                        </a>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- PAGINATION -->
+    @if (Result.TotalPages > 1)
+    {
+        <div class="mc-pagination">
+            <span class="mc-page-info">
+                Showing @((CurrentPage - 1) * 10 + 1)–@(Math.Min(CurrentPage * 10, Result.TotalCount)) of @Result.TotalCount
+            </span>
+            <div class="mc-page-controls">
+                <button class="mc-page-btn mc-page-nav" @onclick="PrevPage" disabled="@(CurrentPage == 1)">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+
+                @for (int p = GetPaginationStart(); p <= GetPaginationEnd(); p++)
+                {
+                    var pageNum = p;
+                    <button class="mc-page-btn @(CurrentPage == pageNum ? "active" : "")"
+                            @onclick="() => GoToPage(pageNum)">
+                        @pageNum
+                    </button>
+                }
+
+                <button class="mc-page-btn mc-page-nav" @onclick="NextPage" disabled="@(CurrentPage == Result.TotalPages)">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    private PagedResult<ComplaintDto> Result = new();
+    private List<CategoryDto> Categories = new();
+    private string SearchTerm = "";
+    private string? FilterStatus;
+    private int? FilterCategory;
+    private string? FilterPriority;
+    private int CurrentPage = 1;
+    private string ViewMode = "table";
+    private bool IsLoading = true;
+    private int UserId;
+    private bool _statusOpen;
+    private bool _categoryOpen;
+    private bool _priorityOpen;
+
+    private List<DropdownOption> StatusOptions { get; set; } = new()
+    {
+        new() { Value = "Pending", Label = "Pending" },
+        new() { Value = "UnderReview", Label = "Under Review" },
+        new() { Value = "InProgress", Label = "In Progress" },
+        new() { Value = "Resolved", Label = "Resolved" },
+        new() { Value = "Closed", Label = "Closed" },
+        new() { Value = "Rejected", Label = "Rejected" },
+        new() { Value = "Reopened", Label = "Reopened" },
+    };
+
+    private List<DropdownOption> CategoryOptions => Categories
+        .Select(c => new DropdownOption { Value = c.Id.ToString(), Label = c.Name, Color = c.ColorHex })
+        .ToList();
+
+    private List<DropdownOption> PriorityOptions { get; set; } = new()
+    {
+        new() { Value = "Critical", Label = "Critical", Color = "#DC2626" },
+        new() { Value = "High", Label = "High", Color = "#EA580C" },
+        new() { Value = "Medium", Label = "Medium", Color = "#D97706" },
+        new() { Value = "Low", Label = "Low", Color = "#16A34A" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        UserId = int.Parse(user.FindFirst("userId")?.Value ?? "0");
+        Categories = await CategoryService.GetActiveAsync();
+        await LoadComplaints();
+    }
+
+    private async Task LoadComplaints()
+    {
+        IsLoading = true;
+        var filter = new ComplaintFilterDto
+        {
+            SearchTerm = SearchTerm,
+            Status = FilterStatus,
+            CategoryId = FilterCategory,
+            Priority = FilterPriority,
+            Page = CurrentPage,
+            PageSize = 10
+        };
+        Result = await ComplaintService.GetByCitizenAsync(UserId, filter);
+        IsLoading = false;
+    }
+
+    private async Task ApplyFilter() { CurrentPage = 1; await LoadComplaints(); }
+
+    private async Task ClearSearch() { SearchTerm = ""; await ApplyFilter(); }
+
+    private async Task ClearSearchChip() { SearchTerm = ""; await ApplyFilter(); }
+
+    private async Task OnStatusFilterChanged(string? value) { FilterStatus = value; await ApplyFilter(); }
+    private async Task OnCategoryFilterChanged(string? value) { FilterCategory = value is not null ? int.Parse(value) : null; await ApplyFilter(); }
+    private async Task OnPriorityFilterChanged(string? value) { FilterPriority = value; await ApplyFilter(); }
+
+    private async Task ClearAllFilters()
+    {
+        SearchTerm = "";
+        FilterStatus = null;
+        FilterCategory = null;
+        FilterPriority = null;
+        CurrentPage = 1;
+        await LoadComplaints();
+    }
+
+    private async Task GoToPage(int page) { CurrentPage = page; await LoadComplaints(); }
+    private async Task PrevPage() => await GoToPage(CurrentPage - 1);
+    private async Task NextPage() => await GoToPage(CurrentPage + 1);
+
+    private string TruncateTitle(string title, int max) =>
+        string.IsNullOrEmpty(title) ? "" :
+        title.Length <= max ? title : title.Substring(0, max) + "...";
+
+    private string GetStatusClass(ComplaintStatus status) => status switch
+    {
+        ComplaintStatus.Pending => "pending",
+        ComplaintStatus.UnderReview => "review",
+        ComplaintStatus.InProgress => "inprogress",
+        ComplaintStatus.Resolved => "resolved",
+        ComplaintStatus.Closed => "closed",
+        ComplaintStatus.Rejected => "rejected",
+        ComplaintStatus.Reopened => "reopened",
+        _ => "pending"
+    };
+
+    private string GetStatusLabel(string status) =>
+        Enum.TryParse<ComplaintStatus>(status, out var s) ? GetStatusLabel(s) : status;
+
+    private string GetStatusLabel(ComplaintStatus status) => status switch
+    {
+        ComplaintStatus.Pending => "Pending",
+        ComplaintStatus.UnderReview => "Under Review",
+        ComplaintStatus.InProgress => "In Progress",
+        ComplaintStatus.Resolved => "Resolved",
+        ComplaintStatus.Closed => "Closed",
+        ComplaintStatus.Rejected => "Rejected",
+        ComplaintStatus.Reopened => "Reopened",
+        _ => status.ToString()
+    };
+
+    private string GetRowClass(ComplaintDto c) =>
+        c.IsSlaBreached && c.Status != ComplaintStatus.Resolved && c.Status != ComplaintStatus.Closed
+            ? "row-breached" : "";
+
+    private string GetPriorityIcon(PriorityLevel p) => p switch
+    {
+        PriorityLevel.Critical => "🔴",
+        PriorityLevel.High => "🟠",
+        PriorityLevel.Medium => "🟡",
+        PriorityLevel.Low => "🟢",
+        _ => "⚪"
+    };
+
+    private string GetCategoryColor(string name) => name?.ToLower() switch
+    {
+        var s when s?.Contains("road") == true => "#EA580C",
+        var s when s?.Contains("water") == true => "#2563EB",
+        var s when s?.Contains("electric") == true => "#D97706",
+        var s when s?.Contains("waste") == true || s?.Contains("sanit") == true => "#16A34A",
+        var s when s?.Contains("light") == true => "#7C3AED",
+        var s when s?.Contains("sewer") == true => "#0891B2",
+        var s when s?.Contains("park") == true || s?.Contains("green") == true => "#15803D",
+        var s when s?.Contains("build") == true || s?.Contains("hazard") == true => "#DC2626",
+        var s when s?.Contains("noise") == true => "#9333EA",
+        var s when s?.Contains("encroach") == true => "#B45309",
+        _ => "#6B7280"
+    };
+
+    private string GetCategoryName(int? id) =>
+        id is null ? "" : Categories.FirstOrDefault(c => c.Id == id)?.Name ?? "Unknown";
+
+    private bool HasActiveFilters =>
+        !string.IsNullOrEmpty(SearchTerm) ||
+        !string.IsNullOrEmpty(FilterStatus) ||
+        FilterCategory.HasValue ||
+        !string.IsNullOrEmpty(FilterPriority);
+
+    private int GetPaginationStart() => Math.Max(1, CurrentPage - 2);
+    private int GetPaginationEnd() => Math.Min(Result.TotalPages, CurrentPage + 2);
+}

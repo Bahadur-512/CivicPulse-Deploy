@@ -1,0 +1,498 @@
+@page "/admin/audit"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@inject IAuditLogService AuditLogService
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="al-page">
+
+    <!-- PAGE HEADER -->
+    <div class="al-header">
+        <div>
+            <h1 class="al-page-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     width="24" height="24" style="color:#1B3A6B;flex-shrink:0">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                Audit Log
+            </h1>
+            <p class="al-page-sub">Complete record of all system actions and changes</p>
+        </div>
+        <button class="al-export-btn" @onclick="ExportLog">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export Log
+        </button>
+    </div>
+
+    <!-- STATS STRIP -->
+    <div class="al-stats-strip">
+        <div class="al-stat">
+            <span class="al-stat-num">@totalCount</span>
+            <span class="al-stat-label">Total Entries</span>
+        </div>
+        <div class="al-stat">
+            <span class="al-stat-num" style="color:#2563EB">
+                @logs.Count(l => l.Action == "STATUS_CHANGED")
+            </span>
+            <span class="al-stat-label">Status Changes</span>
+        </div>
+        <div class="al-stat">
+            <span class="al-stat-num" style="color:#16A34A">
+                @logs.Count(l => l.Action == "COMPLAINT_CREATED")
+            </span>
+            <span class="al-stat-label">Complaints Created</span>
+        </div>
+        <div class="al-stat">
+            <span class="al-stat-num" style="color:#9333EA">
+                @logs.Count(l => l.Action.StartsWith("USER_"))
+            </span>
+            <span class="al-stat-label">User Actions</span>
+        </div>
+    </div>
+
+    <!-- FILTER BAR -->
+    <div class="al-filter-bar">
+        <FilterDropdown Open="@_actionOpen"
+                        OpenChanged="(bool v) => _actionOpen = v"
+                        Placeholder="All Actions"
+                        AllLabel="All Actions"
+                        SelectedValue="@filter.Action"
+                        SelectedLabel="@GetActionDisplayLabel(filter.Action)"
+                        Options="@ActionOptions"
+                        OnSelectionChanged="OnActionChanged"
+                        IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><polygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'/></svg>" />
+
+        <FilterDropdown Open="@_entityOpen"
+                        OpenChanged="(bool v) => _entityOpen = v"
+                        Placeholder="All Entities"
+                        AllLabel="All Entities"
+                        SelectedValue="@filter.EntityType"
+                        SelectedLabel="@filter.EntityType"
+                        Options="@EntityOptions"
+                        OnSelectionChanged="OnEntityChanged"
+                        IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><rect x='2' y='3' width='9' height='9' rx='1'/><rect x='13' y='3' width='9' height='9' rx='1'/><rect x='2' y='14' width='9' height='9' rx='1'/><rect x='13' y='14' width='9' height='9' rx='1'/></svg>" />
+
+        <div class="al-date-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="color:#9CA3AF;flex-shrink:0">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <input class="al-date-input" type="date" @bind="filter.DateFrom" @bind:after="ApplyFilter" />
+            <span class="al-date-sep">to</span>
+            <input class="al-date-input" type="date" @bind="filter.DateTo" @bind:after="ApplyFilter" />
+        </div>
+
+        <button class="al-search-btn" @onclick="ApplyFilter">Search</button>
+        <button class="al-clear-btn" @onclick="ClearFilters">Clear</button>
+    </div>
+
+    <!-- LOG LIST -->
+    @if (isLoading)
+    {
+        <div class="al-card">
+            @for (int i = 0; i < 8; i++)
+            {
+                <div class="al-skeleton-row">
+                    <div class="skeleton" style="width:36px;height:36px;border-radius:10px;flex-shrink:0;"></div>
+                    <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+                        <div class="skeleton" style="height:13px;width:120px;"></div>
+                        <div class="skeleton" style="height:12px;width:280px;"></div>
+                        <div class="skeleton" style="height:11px;width:160px;"></div>
+                    </div>
+                    <div class="skeleton" style="width:80px;height:12px;"></div>
+                </div>
+            }
+        </div>
+    }
+    else if (!logs.Any())
+    {
+        <div class="al-empty">
+            <svg viewBox="0 0 80 80" fill="none" width="80" height="80">
+                <circle cx="40" cy="40" r="38" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="2"/>
+                <path d="M28 28h24M28 36h24M28 44h16" stroke="#93C5FD" stroke-width="2.5" stroke-linecap="round"/>
+            </svg>
+            <h3>No audit logs found</h3>
+            <p>Try adjusting your filters</p>
+        </div>
+    }
+    else
+    {
+        <div class="al-card">
+            @foreach (var log in logs)
+            {
+                <div class="al-log-item" @onclick="() => ToggleExpand(log.Id)">
+                    <!-- Action Icon -->
+                    <div class="al-log-icon al-icon-@GetActionClass(log.Action)">
+                        @GetActionIconSvg(log.Action)
+                    </div>
+
+                    <!-- Main Content -->
+                    <div class="al-log-body">
+                        <div class="al-log-top">
+                            <span class="al-action-badge al-badge-@GetActionClass(log.Action)">
+                                @GetActionLabel(log.Action)
+                            </span>
+                            @if (!string.IsNullOrEmpty(log.EntityType))
+                            {
+                                <span class="al-entity-tag">@log.EntityType</span>
+                            }
+                            @if (log.EntityId.HasValue)
+                            {
+                                <span class="al-entity-id">#@log.EntityId</span>
+                            }
+                        </div>
+                        <p class="al-log-desc">@log.Description</p>
+                        <div class="al-log-meta">
+                            @if (!string.IsNullOrEmpty(log.UserName))
+                            {
+                                <span class="al-meta-item">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                                        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                                        <circle cx="12" cy="7" r="4"/>
+                                    </svg>
+                                    @log.UserName
+                                </span>
+                            }
+                            @if (!string.IsNullOrEmpty(log.IpAddress) && log.IpAddress != "::1")
+                            {
+                                <span class="al-meta-item">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <line x1="2" y1="12" x2="22" y2="12"/>
+                                        <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+                                    </svg>
+                                    @(log.IpAddress == "::1" ? "localhost" : log.IpAddress)
+                                </span>
+                            }
+                        </div>
+
+                        <!-- Expanded JSON diff (click to toggle) -->
+                        @if (expandedLogId == log.Id && (!string.IsNullOrEmpty(log.OldValues) || !string.IsNullOrEmpty(log.NewValues)))
+                        {
+                            <div class="al-diff-panel">
+                                @if (!string.IsNullOrEmpty(log.OldValues))
+                                {
+                                    <div class="al-diff-block al-diff-old">
+                                        <span class="al-diff-label">Before</span>
+                                        <div class="al-diff-entries">
+                                            @RenderJsonEntries(log.OldValues)
+                                        </div>
+                                    </div>
+                                }
+                                @if (!string.IsNullOrEmpty(log.NewValues))
+                                {
+                                    <div class="al-diff-block al-diff-new">
+                                        <span class="al-diff-label">After</span>
+                                        <div class="al-diff-entries">
+                                            @RenderJsonEntries(log.NewValues)
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Timestamp -->
+                    <div class="al-log-time">
+                        <span class="al-time-full">@log.CreatedAt.ToString("MMM dd, yyyy")</span>
+                        <span class="al-time-sub">@log.CreatedAt.ToString("hh:mm tt")</span>
+                        @if (!string.IsNullOrEmpty(log.OldValues) || !string.IsNullOrEmpty(log.NewValues))
+                        {
+                            <span class="al-expand-hint">
+                                @(expandedLogId == log.Id ? "▲ Hide" : "▼ Details")
+                            </span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- PAGINATION -->
+        @if (totalPages > 1)
+        {
+            <div class="al-pagination">
+                <span class="al-page-info">Page @currentPage of @totalPages</span>
+                <div class="al-page-controls">
+                    <button class="al-page-btn" @onclick="PrevPage" disabled="@(currentPage == 1)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                            <polyline points="15 18 9 12 15 6"/>
+                        </svg>
+                    </button>
+                    @for (int p = Math.Max(1, currentPage - 2); p <= Math.Min(totalPages, currentPage + 2); p++)
+                    {
+                        var pg = p;
+                        <button class="al-page-btn @(currentPage == pg ? "active" : "")"
+                                @onclick="() => GoToPage(pg)">@pg</button>
+                    }
+                    <button class="al-page-btn" @onclick="NextPage" disabled="@(currentPage == totalPages)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private PagedResult<AuditLogDto> result = new();
+    private AuditLogFilterDto filter = new() { PageSize = 25 };
+    private int CurrentPage = 1;
+    private int? expandedLogId;
+    private bool isLoading = true;
+    private bool _actionOpen;
+    private bool _entityOpen;
+
+    private List<DropdownOption> ActionOptions = new()
+    {
+        new() { Value = "STATUS_CHANGED",    Label = "Status Changes",      Color = "#3B82F6" },
+        new() { Value = "COMPLAINT_CREATED", Label = "Complaint Created",   Color = "#16A34A" },
+        new() { Value = "COMPLAINT_UPDATED", Label = "Complaint Updated",   Color = "#D97706" },
+        new() { Value = "USER_STATUS_TOGGLED", Label = "User Status Toggle", Color = "#9333EA" },
+        new() { Value = "PASSWORD_RESET",    Label = "Password Reset",      Color = "#DC2626" },
+        new() { Value = "USER_CREATED",      Label = "User Created",        Color = "#0891B2" },
+    };
+
+    private List<DropdownOption> EntityOptions = new()
+    {
+        new() { Value = "Complaint", Label = "Complaint", Color = "#3B82F6" },
+        new() { Value = "User",      Label = "User",      Color = "#16A34A" },
+        new() { Value = "Category",  Label = "Category",  Color = "#D97706" },
+        new() { Value = "System",    Label = "System",    Color = "#9333EA" },
+    };
+
+    private string GetActionDisplayLabel(string? action) => action switch
+    {
+        "STATUS_CHANGED"       => "Status Changes",
+        "COMPLAINT_CREATED"    => "Complaint Created",
+        "COMPLAINT_UPDATED"    => "Complaint Updated",
+        "USER_STATUS_TOGGLED"  => "User Status Toggle",
+        "PASSWORD_RESET"       => "Password Reset",
+        "USER_CREATED"         => "User Created",
+        _ => ""
+    };
+
+    private async Task OnActionChanged(string? value)
+    {
+        filter.Action = value;
+        await ApplyFilter();
+    }
+
+    private async Task OnEntityChanged(string? value)
+    {
+        filter.EntityType = value;
+        await ApplyFilter();
+    }
+
+    private List<AuditLogDto> logs => result.Items;
+    private int totalCount => result.TotalCount;
+    private int totalPages => result.TotalPages;
+    private int currentPage => CurrentPage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        filter.Page = CurrentPage;
+        result = await AuditLogService.GetLogsAsync(filter);
+        isLoading = false;
+    }
+
+    private async Task ApplyFilter()
+    {
+        CurrentPage = 1;
+        await LoadData();
+    }
+
+    private async Task ClearFilters()
+    {
+        filter = new AuditLogFilterDto { PageSize = 25 };
+        CurrentPage = 1;
+        await LoadData();
+    }
+
+    private async Task PrevPage()
+    {
+        if (CurrentPage > 1) { CurrentPage--; await LoadData(); }
+    }
+
+    private async Task NextPage()
+    {
+        if (CurrentPage < totalPages) { CurrentPage++; await LoadData(); }
+    }
+
+    private async Task GoToPage(int p)
+    {
+        CurrentPage = p;
+        await LoadData();
+    }
+
+    private void ToggleExpand(int id) =>
+        expandedLogId = expandedLogId == id ? null : id;
+
+    private MarkupString RenderJsonEntries(string json)
+    {
+        if (string.IsNullOrEmpty(json)) return new MarkupString("");
+
+        // Attempt 1: Direct dictionary parse (single-serialized data)
+        var dict = TryParseDict(json);
+        if (dict != null) return BuildEntriesHtml(dict);
+
+        // Attempt 2: Double-serialized — outer value is a JSON-encoded string
+        // Deserialize as string first to handle \u0022 unicode escapes
+        try
+        {
+            var unescaped = System.Text.Json.JsonSerializer.Deserialize<string>(json);
+            if (!string.IsNullOrEmpty(unescaped))
+            {
+                dict = TryParseDict(unescaped);
+                if (dict != null) return BuildEntriesHtml(dict);
+
+                // Inner value is still JSON-ish but not a flat object — show pretty fallback
+                return new MarkupString($"<span class=\"al-diff-plain\">{System.Net.WebUtility.HtmlEncode(unescaped)}</span>");
+            }
+        }
+        catch { }
+
+        // Final fallback: show raw string
+        return new MarkupString($"<span class=\"al-diff-plain\">{System.Net.WebUtility.HtmlEncode(json)}</span>");
+    }
+
+    private static Dictionary<string, System.Text.Json.JsonElement>? TryParseDict(string json)
+    {
+        try
+        {
+            var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(json);
+            return dict?.Count > 0 ? dict : null;
+        }
+        catch { return null; }
+    }
+
+    private MarkupString BuildEntriesHtml(Dictionary<string, System.Text.Json.JsonElement> dict)
+    {
+        var html = new System.Text.StringBuilder();
+        foreach (var kvp in dict)
+        {
+            var key = FormatKeyName(kvp.Key);
+            var val = ExtractJsonValue(kvp.Value);
+            html.Append("<div class=\"al-diff-row\">");
+            html.Append($"<span class=\"al-diff-prop\">{System.Net.WebUtility.HtmlEncode(key)}</span>");
+            html.Append($"<span class=\"al-diff-val\">{System.Net.WebUtility.HtmlEncode(val)}</span>");
+            html.Append("</div>");
+        }
+        return new MarkupString(html.ToString());
+    }
+
+    private static string ExtractJsonValue(System.Text.Json.JsonElement element) => element.ValueKind switch
+    {
+        System.Text.Json.JsonValueKind.String => element.GetString() ?? "",
+        System.Text.Json.JsonValueKind.Number => element.GetRawText(),
+        System.Text.Json.JsonValueKind.True => "true",
+        System.Text.Json.JsonValueKind.False => "false",
+        System.Text.Json.JsonValueKind.Null => "—",
+        _ => element.GetRawText()
+    };
+
+    private static string FormatKeyName(string key)
+    {
+        if (string.IsNullOrEmpty(key)) return key;
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < key.Length; i++)
+        {
+            if (i == 0)
+                sb.Append(char.ToUpper(key[i]));
+            else if (char.IsUpper(key[i]) && i > 0)
+            {
+                sb.Append(' ');
+                sb.Append(key[i]);
+            }
+            else
+                sb.Append(key[i]);
+        }
+        return sb.ToString();
+    }
+
+    private async Task ExportLog()
+    {
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Timestamp,User,Action,Entity,Description,IP");
+        foreach (var l in result.Items)
+            csv.AppendLine($"\"{l.CreatedAt:yyyy-MM-dd HH:mm}\",\"{l.UserName}\",{l.Action},{l.EntityType}#{l.EntityId},\"{l.Description}\",{l.IpAddress}");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv.ToString());
+        var base64 = Convert.ToBase64String(bytes);
+        await JS.InvokeVoidAsync("CivicInterop.downloadFile", $"audit-log-{DateTime.Now:yyyyMMdd}.csv", base64, "text/csv");
+    }
+
+    private string GetActionLabel(string action) => action switch
+    {
+        "STATUS_CHANGED"       => "Status Changed",
+        "COMPLAINT_CREATED"    => "Complaint Created",
+        "COMPLAINT_UPDATED"    => "Complaint Updated",
+        "COMPLAINT_DELETED"    => "Complaint Deleted",
+        "COMPLAINT_ARCHIVED"   => "Complaint Archived",
+        "COMPLAINT_REOPENED"   => "Complaint Reopened",
+        "USER_CREATED"         => "User Created",
+        "USER_STATUS_TOGGLED"  => "User Status Changed",
+        "PASSWORD_RESET"       => "Password Reset",
+        "USER_UPDATED"         => "User Updated",
+        "CATEGORY_CREATED"     => "Category Created",
+        "CATEGORY_UPDATED"     => "Category Updated",
+        "LOGIN"                => "User Login",
+        "LOGOUT"               => "User Logout",
+        _ => action?.Replace("_", " ") ?? "Unknown Action"
+    };
+
+    private string GetActionClass(string action) => action switch
+    {
+        "STATUS_CHANGED"       => "status",
+        "COMPLAINT_CREATED"    => "created",
+        "COMPLAINT_UPDATED"    => "updated",
+        "COMPLAINT_DELETED"    => "deleted",
+        "COMPLAINT_ARCHIVED"   => "archived",
+        "COMPLAINT_REOPENED"   => "reopened",
+        "USER_CREATED"         => "user",
+        "USER_STATUS_TOGGLED"  => "user",
+        "PASSWORD_RESET"       => "security",
+        "USER_UPDATED"         => "user",
+        "CATEGORY_CREATED"     => "category",
+        "CATEGORY_UPDATED"     => "category",
+        "LOGIN"                => "login",
+        "LOGOUT"               => "login",
+        _ => "default"
+    };
+
+    private MarkupString GetActionIconSvg(string action)
+    {
+        var svg = GetActionClass(action) switch
+        {
+            "status" => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='18' height='18'><polyline points='17 1 21 5 17 9'/><path d='M3 11V9a4 4 0 014-4h14'/><polyline points='7 23 3 19 7 15'/><path d='M21 13v2a4 4 0 01-4 4H3'/></svg>",
+            "created" => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='18' height='18'><line x1='12' y1='5' x2='12' y2='19'/><line x1='5' y1='12' x2='19' y2='12'/></svg>",
+            "updated" => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='18' height='18'><path d='M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7'/><path d='M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z'/></svg>",
+            "deleted" => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='18' height='18'><polyline points='3 6 5 6 21 6'/><path d='M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6'/><path d='M10 11v6M14 11v6'/></svg>",
+            "user" => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='18' height='18'><path d='M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2'/><circle cx='12' cy='7' r='4'/></svg>",
+            "security" => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='18' height='18'><rect x='3' y='11' width='18' height='11' rx='2' ry='2'/><path d='M7 11V7a5 5 0 0110 0v4'/></svg>",
+            "category" => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='18' height='18'><path d='M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z'/><line x1='7' y1='7' x2='7.01' y2='7'/></svg>",
+            "login" => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='18' height='18'><path d='M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4'/><polyline points='10 17 15 12 10 7'/><line x1='15' y1='12' x2='3' y2='12'/></svg>",
+            _ => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='18' height='18'><circle cx='12' cy='12' r='10'/><line x1='12' y1='8' x2='12' y2='12'/><line x1='12' y1='16' x2='12.01' y2='16'/></svg>"
+        };
+        return new MarkupString(svg);
+    }
+}

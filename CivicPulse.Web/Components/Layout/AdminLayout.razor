@@ -1,0 +1,219 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<style>
+    .admin-shell { display:flex; height:100vh; overflow:hidden; background:#F0F4F8; }
+    .admin-sidebar { width:240px; min-width:240px; background:#0D2040; display:flex; flex-direction:column; transition:width .25s ease,min-width .25s ease; overflow:hidden; z-index:100; }
+    .admin-sidebar.collapsed { width:64px; min-width:64px; }
+    .admin-brand { display:flex; align-items:center; gap:12px; padding:20px 16px 18px; border-bottom:1px solid rgba(255,255,255,.07); white-space:nowrap; overflow:hidden; }
+    .admin-brand-icon { width:36px; height:36px; background:linear-gradient(135deg,#1B3A6B,#2D5BA3); border-radius:10px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:1rem; flex-shrink:0; }
+    .admin-brand-name { color:#fff; font-weight:800; font-size:1rem; display:block; }
+    .admin-brand-sub { color:rgba(255,255,255,.35); font-size:.65rem; display:block; text-transform:uppercase; letter-spacing:1px; }
+    .admin-nav { flex:1; padding:12px 10px; display:flex; flex-direction:column; gap:2px; overflow-y:auto; overflow-x:hidden; }
+    .admin-nav-section { font-size:.6rem; font-weight:700; color:rgba(255,255,255,.25); text-transform:uppercase; letter-spacing:1.5px; padding:10px 8px 4px; white-space:nowrap; overflow:hidden; }
+    .admin-nav-item { display:flex; align-items:center; gap:11px; padding:10px 12px; color:rgba(255,255,255,.55); text-decoration:none; font-size:.855rem; font-weight:600; border-radius:10px; transition:all .15s ease; border:1px solid transparent; white-space:nowrap; overflow:hidden; }
+    .admin-nav-item:hover { background:rgba(255,255,255,.07); color:rgba(255,255,255,.9); }
+    .admin-nav-item.active { background:rgba(255,255,255,.10); color:#fff; border-left:3px solid #00897B; }
+    .admin-nav-item .nav-icon { width:18px; height:18px; flex-shrink:0; min-width:18px; stroke:currentColor; opacity:.75; }
+    .admin-nav-item.active .nav-icon, .admin-nav-item:hover .nav-icon { opacity:1; }
+    .admin-sidebar-footer { padding:12px 10px; border-top:1px solid rgba(255,255,255,.07); display:flex; align-items:center; justify-content:space-between; gap:8px; overflow:hidden; }
+    .admin-user-info { display:flex; align-items:center; gap:10px; overflow:hidden; flex:1; }
+    .admin-user-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#1B3A6B,#2D5BA3); color:#fff; display:flex; align-items:center; justify-content:center; font-size:.85rem; flex-shrink:0; }
+    .admin-user-name { display:block; color:#fff; font-size:.8rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:110px; }
+    .admin-user-role { display:block; color:rgba(255,255,255,.35); font-size:.62rem; text-transform:uppercase; letter-spacing:.5px; }
+    .admin-collapse-btn { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); color:rgba(255,255,255,.45); width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:.8rem; flex-shrink:0; transition:all .15s; }
+    .admin-collapse-btn:hover { background:rgba(255,255,255,.12); color:#fff; }
+    .admin-topbar { height:60px; background:#fff; border-bottom:1px solid #E2E8F0; display:flex; align-items:center; padding:0 28px; gap:16px; position:sticky; top:0; z-index:50; box-shadow:0 1px 4px rgba(0,0,0,.05); }
+    .topbar-title { font-weight:700; font-size:.95rem; color:#1A202C; }
+    .topbar-actions { margin-left:auto; display:flex; align-items:center; gap:14px; }
+    .admin-user-menu { display:flex; align-items:center; gap:10px; }
+    .admin-avatar { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#1B3A6B,#2D5BA3); display:flex; align-items:center; justify-content:center; color:#fff; font-size:.9rem; }
+    .user-name { font-size:.85rem; font-weight:700; color:#1A202C; }
+    .user-role-badge { font-size:.62rem; font-weight:700; background:#EFF6FF; color:#1B3A6B; padding:1px 7px; border-radius:4px; text-transform:uppercase; letter-spacing:.5px; }
+    .logout-btn { background:none; border:1px solid #E2E8F0; color:#9CA3AF; cursor:pointer; padding:6px 10px; border-radius:8px; transition:all .15s; font-size:.9rem; }
+    .logout-btn:hover { background:#FEF2F2; border-color:#FECACA; color:#DC2626; }
+    .admin-main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+    .admin-content { flex:1; overflow-y:auto; padding:28px 32px; background:#F0F4F8; }
+    .mobile-menu-btn { display:none; background:none; border:none; font-size:1.4rem; cursor:pointer; color:#374151; }
+    .sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:150; backdrop-filter:blur(2px); }
+    @@media (max-width:768px) {
+        .admin-sidebar { position:fixed; left:0; top:0; height:100%; z-index:200; transform:translateX(-100%); transition:transform .25s ease; }
+        .admin-sidebar.mobile-open { transform:translateX(0); }
+        .sidebar-overlay { display:block; }
+        .mobile-menu-btn { display:block; }
+        .admin-content { padding:16px; }
+    }
+</style>
+
+<div class="admin-shell">
+
+    <aside class="admin-sidebar @(collapsed ? "collapsed" : "") @(mobileOpen ? "mobile-open" : "")">
+
+        <div class="admin-brand">
+            <div class="admin-brand-icon">
+                <i class="bi bi-shield-fill-check"></i>
+            </div>
+            @if (!collapsed)
+            {
+                <div class="admin-brand-text">
+                    <span class="admin-brand-name">Civic Pulse</span>
+                    <span class="admin-brand-sub">Admin Panel</span>
+                </div>
+            }
+        </div>
+
+        <nav class="admin-nav">
+            @if (!collapsed) { <span class="admin-nav-section">Overview</span> }
+
+            <NavLink href="/admin/dashboard" class="admin-nav-item" Match="NavLinkMatch.All">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="9" height="9" rx="1"/><rect x="13" y="3" width="9" height="9" rx="1"/>
+                    <rect x="2" y="14" width="9" height="9" rx="1"/><rect x="13" y="14" width="9" height="9" rx="1"/>
+                </svg>
+                @if (!collapsed) { <span>Dashboard</span> }
+            </NavLink>
+
+            @if (!collapsed) { <span class="admin-nav-section">Management</span> }
+
+            <NavLink href="/admin/complaints" class="admin-nav-item" Match="NavLinkMatch.All">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                    <rect x="9" y="3" width="6" height="4" rx="1"/>
+                    <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+                </svg>
+                @if (!collapsed) { <span>Manage Complaints</span> }
+            </NavLink>
+
+            <NavLink href="/admin/sla" class="admin-nav-item" Match="NavLinkMatch.All">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                @if (!collapsed) { <span>SLA Tracking</span> }
+            </NavLink>
+
+            <NavLink href="/admin/users" class="admin-nav-item" Match="NavLinkMatch.All">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                </svg>
+                @if (!collapsed) { <span>User Management</span> }
+            </NavLink>
+
+            <NavLink href="/admin/categories" class="admin-nav-item" Match="NavLinkMatch.All">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+                    <line x1="7" y1="7" x2="7.01" y2="7"/>
+                </svg>
+                @if (!collapsed) { <span>Categories</span> }
+            </NavLink>
+
+            <NavLink href="/admin/feedback" class="admin-nav-item" Match="NavLinkMatch.All">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                    <line x1="9" y1="10" x2="15" y2="10"/>
+                </svg>
+                @if (!collapsed) { <span>Feedback</span> }
+            </NavLink>
+
+            @if (!collapsed) { <span class="admin-nav-section">System</span> }
+
+            <NavLink href="/admin/audit" class="admin-nav-item" Match="NavLinkMatch.All">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                @if (!collapsed) { <span>Audit Log</span> }
+            </NavLink>
+        </nav>
+
+        <div class="admin-sidebar-footer">
+            @if (!collapsed)
+            {
+                <div class="admin-user-info">
+                    <div class="admin-user-avatar">
+                        <i class="bi bi-shield-fill"></i>
+                    </div>
+                    <div>
+                        <span class="admin-user-name">@adminName</span>
+                        <span class="admin-user-role">System Admin</span>
+                    </div>
+                </div>
+            }
+            <button class="admin-collapse-btn" @onclick="() => collapsed = !collapsed">
+                <i class="bi @(collapsed ? "bi-chevron-double-right" : "bi-chevron-double-left")"></i>
+            </button>
+        </div>
+    </aside>
+
+    <div class="admin-main">
+
+        <header class="admin-topbar">
+            <button class="mobile-menu-btn" @onclick="() => mobileOpen = !mobileOpen">
+                <i class="bi bi-list"></i>
+            </button>
+            <span class="topbar-title">Civic Pulse</span>
+            <div class="topbar-actions">
+                <div class="admin-user-menu">
+                    <div class="admin-avatar">
+                        <i class="bi bi-shield-fill"></i>
+                    </div>
+                    <div>
+                        <span class="user-name">@adminName</span>
+                        <span class="user-role-badge">Admin</span>
+                    </div>
+                    <button class="logout-btn" @onclick="Logout" title="Logout">
+                        <i class="bi bi-box-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="admin-content">
+            @Body
+        </main>
+    </div>
+</div>
+
+@if (mobileOpen)
+{
+    <div class="sidebar-overlay" @onclick="() => mobileOpen = false"></div>
+}
+
+@code {
+    private bool collapsed;
+    private bool mobileOpen;
+    private string adminName = "Admin";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+
+        if (!user.Identity?.IsAuthenticated ?? true)
+        {
+            Navigation.NavigateTo("/login", replace: true);
+            return;
+        }
+
+        var role = user.FindFirst("role")?.Value ?? "";
+        if (role != "Admin")
+        {
+            Navigation.NavigateTo("/citizen/dashboard", replace: true);
+            return;
+        }
+
+        adminName = user.FindFirst("fullName")?.Value
+                 ?? user.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                 ?? "Admin";
+    }
+
+    private void Logout()
+    {
+        Navigation.NavigateTo("/api/auth/logout", true);
+    }
+}

@@ -1,0 +1,704 @@
+@page "/admin/complaints/{Id:int}"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@inject IComplaintService ComplaintService
+@inject IAuditLogService AuditLogService
+@inject IFeedbackService FeedbackService
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<style>
+    .adcd-page { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .adcd-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; gap: 16px; color: #6B7280; }
+    .adcd-spinner { width: 36px; height: 36px; border: 3px solid #E5E7EB; border-top-color: #2563EB; border-radius: 50%; animation: adcd-spin .7s linear infinite; }
+    @@keyframes adcd-spin { to { transform: rotate(360deg); } }
+
+    .adcd-breadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; }
+    .adcd-back-btn { display: inline-flex; align-items: center; gap: 6px; color: #6B7280; text-decoration: none; padding: 6px 12px; border-radius: 8px; transition: all .15s; }
+    .adcd-back-btn:hover { background: #F3F4F6; color: #1F2937; }
+    .adcd-sep { color: #D1D5DB; }
+    .adcd-current { color: #9CA3AF; font-weight: 500; }
+
+    .adcd-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+    .adcd-header-left { display: flex; flex-direction: column; gap: 4px; }
+    .adcd-num { font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 20px; font-weight: 700; color: #111827; }
+    .adcd-meta { font-size: 13px; color: #6B7280; }
+    .adcd-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    .adcd-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .adcd-badge-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .adcd-status-Pending { background: #FEF3C7; color: #92400E; }
+    .adcd-status-Pending .adcd-badge-dot { background: #F59E0B; }
+    .adcd-status-UnderReview { background: #DBEAFE; color: #1E40AF; }
+    .adcd-status-UnderReview .adcd-badge-dot { background: #3B82F6; }
+    .adcd-status-InProgress { background: #E0E7FF; color: #3730A3; }
+    .adcd-status-InProgress .adcd-badge-dot { animation: adcd-pulse 1.5s infinite; background: #6366F1; }
+    .adcd-status-Resolved { background: #D1FAE5; color: #065F46; }
+    .adcd-status-Resolved .adcd-badge-dot { background: #10B981; }
+    .adcd-status-Closed { background: #F3F4F6; color: #374151; }
+    .adcd-status-Closed .adcd-badge-dot { background: #9CA3AF; }
+    .adcd-status-Rejected { background: #FEE2E2; color: #991B1B; }
+    .adcd-status-Rejected .adcd-badge-dot { background: #EF4444; }
+    .adcd-status-Reopened { background: #FEF3C7; color: #92400E; }
+    .adcd-status-Reopened .adcd-badge-dot { background: #F59E0B; }
+    @@keyframes adcd-pulse { 0%,to { opacity:1; } 50% { opacity:.4; } }
+
+    .adcd-priority { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .adcd-priority-Critical { background: #FEE2E2; color: #991B1B; }
+    .adcd-priority-High { background: #FFF7ED; color: #9A3412; }
+    .adcd-priority-Medium { background: #FEF9C3; color: #854D0E; }
+    .adcd-priority-Low { background: #D1FAE5; color: #065F46; }
+
+    .adcd-layout { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
+    @@media (max-width: 820px) { .adcd-layout { grid-template-columns: 1fr; } }
+
+    .adcd-card { background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; }
+    .adcd-card + .adcd-card { margin-top: 16px; }
+    .adcd-card-header { display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid #F3F4F6; font-size: 13px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: .03em; }
+    .adcd-card-header svg { flex-shrink: 0; }
+    .adcd-card-body { padding: 18px; }
+    .adcd-card-body:only-child { border-bottom: none; }
+
+    .adcd-title { font-size: 17px; font-weight: 700; color: #111827; margin: 0 0 8px 0; line-height: 1.4; }
+    .adcd-desc { font-size: 14px; color: #4B5563; line-height: 1.7; margin: 0; white-space: pre-wrap; }
+    .adcd-actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+    .adcd-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; text-decoration: none; transition: all .15s; }
+    .adcd-btn-primary { background: #2563EB; color: #fff; }
+    .adcd-btn-primary:hover { background: #1D4ED8; }
+    .adcd-btn-ghost { background: transparent; color: #6B7280; border: 1px solid #E5E7EB; }
+    .adcd-btn-ghost:hover { background: #F9FAFB; color: #374151; }
+    .adcd-btn-danger { background: transparent; color: #DC2626; border: 1px solid #FECACA; }
+    .adcd-btn-danger:hover { background: #FEF2F2; }
+
+    .adcd-sidebar-card { background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; }
+    .adcd-sidebar-card + .adcd-sidebar-card { margin-top: 12px; }
+    .adcd-sidebar-body { padding: 14px 16px; }
+    .adcd-meta-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 13px; }
+    .adcd-meta-item + .adcd-meta-item { border-top: 1px solid #F9FAFB; }
+    .adcd-meta-label { color: #9CA3AF; font-weight: 500; }
+    .adcd-meta-value { color: #1F2937; font-weight: 600; text-align: right; }
+    .adcd-cat-pill { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; color: #fff; }
+    .adcd-sla-card { background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; padding: 16px; }
+    .adcd-sla-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #6B7280; margin-bottom: 10px; }
+    .adcd-sla-bar-track { height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+    .adcd-sla-bar-fill { height: 100%; border-radius: 4px; transition: width .5s; }
+    .adcd-sla-text { font-size: 12px; font-weight: 600; }
+    .adcd-sla-ok { color: #059669; }
+    .adcd-sla-warn { color: #D97706; }
+    .adcd-sla-danger { color: #DC2626; }
+
+    .adcd-att-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+    .adcd-att-item { display: block; width: 100%; aspect-ratio: 1; border-radius: 8px; overflow: hidden; border: 1px solid #E5E7EB; text-decoration: none; position: relative; transition: border-color .15s; }
+    .adcd-att-item:hover { border-color: #2563EB; }
+    .adcd-att-img { width: 100%; height: 100%; object-fit: cover; }
+    .adcd-att-file { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; background: #F9FAFB; font-size: 10px; color: #6B7280; text-align: center; padding: 4px; word-break: break-all; }
+    .adcd-att-file svg { width: 24px; height: 24px; }
+    .adcd-att-name { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,.6)); color: #fff; font-size: 9px; padding: 16px 4px 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .adcd-map { height: 180px; border-radius: 8px; overflow: hidden; }
+
+    .adcd-timeline { position: relative; padding-left: 28px; }
+    .adcd-timeline::before { content: ''; position: absolute; left: 10px; top: 8px; bottom: 8px; width: 2px; background: #E5E7EB; }
+    .adcd-tl-item { position: relative; padding-bottom: 20px; }
+    .adcd-tl-item:last-child { padding-bottom: 0; }
+    .adcd-tl-dot { position: absolute; left: -23px; top: 4px; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #fff; background: #D1D5DB; box-shadow: 0 0 0 2px #E5E7EB; }
+    .adcd-tl-dot.active { background: #2563EB; box-shadow: 0 0 0 2px #BFDBFE; }
+    .adcd-tl-dot.resolved { background: #10B981; box-shadow: 0 0 0 2px #A7F3D0; }
+    .adcd-tl-dot.rejected { background: #EF4444; box-shadow: 0 0 0 2px #FECACA; }
+    .adcd-tl-arrow { font-size: 12px; color: #6B7280; }
+    .adcd-tl-title { font-size: 13px; font-weight: 600; color: #1F2937; }
+    .adcd-tl-meta { font-size: 12px; color: #9CA3AF; margin-top: 2px; }
+    .adcd-tl-note { font-size: 12px; color: #4B5563; margin-top: 4px; padding: 6px 10px; background: #F9FAFB; border-radius: 6px; }
+
+    .adcd-audit table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .adcd-audit th { text-align: left; padding: 8px 12px; border-bottom: 1px solid #F3F4F6; color: #6B7280; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .03em; }
+    .adcd-audit td { padding: 8px 12px; border-bottom: 1px solid #F9FAFB; color: #374151; }
+    .adcd-audit tr:hover td { background: #F9FAFB; }
+    .adcd-audit-action { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #F3F4F6; color: #374151; }
+
+    .adcd-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; backdrop-filter: blur(2px); }
+    .adcd-modal { background: #fff; border-radius: 12px; width: 100%; max-width: 440px; box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); animation: adcd-modal-in .2s ease-out; }
+    @@keyframes adcd-modal-in { from { opacity:0; transform:scale(.96) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }
+    .adcd-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid #E5E7EB; font-size: 15px; font-weight: 700; color: #111827; }
+    .adcd-modal-close { background: none; border: none; font-size: 22px; color: #9CA3AF; cursor: pointer; padding: 0 4px; line-height: 1; border-radius: 6px; transition: all .15s; }
+    .adcd-modal-close:hover { color: #374151; background: #F3F4F6; }
+    .adcd-modal-body { padding: 22px; }
+    .adcd-form-group { margin-bottom: 18px; }
+    .adcd-form-group:last-child { margin-bottom: 0; }
+    .adcd-form-group label { display: block; font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .03em; }
+    .adcd-status-options { display: flex; flex-direction: column; gap: 6px; }
+    .adcd-status-option { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 2px solid #E5E7EB; border-radius: 10px; cursor: pointer; transition: all .15s; font-size: 13px; font-weight: 600; color: #374151; background: #fff; }
+    .adcd-status-option:hover { border-color: #CBD5E1; background: #F9FAFB; }
+    .adcd-status-option.selected { border-color: #2563EB; background: #EFF6FF; color: #1D4ED8; }
+    .adcd-status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .adcd-status-dot.Pending { background: #F59E0B; }
+    .adcd-status-dot.UnderReview { background: #3B82F6; }
+    .adcd-status-dot.InProgress { background: #6366F1; }
+    .adcd-status-dot.Resolved { background: #10B981; }
+    .adcd-status-dot.Closed { background: #9CA3AF; }
+    .adcd-status-dot.Rejected { background: #EF4444; }
+    .adcd-status-dot.Reopened { background: #F59E0B; }
+    .adcd-status-option .adcd-status-label { flex: 1; }
+    .adcd-status-option .adcd-status-check { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #D1D5DB; display: flex; align-items: center; justify-content: center; transition: all .15s; flex-shrink: 0; }
+    .adcd-status-option.selected .adcd-status-check { border-color: #2563EB; background: #2563EB; }
+    .adcd-status-option.selected .adcd-status-check::after { content: ''; width: 6px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); margin-top: -1px; }
+    .adcd-textarea { width: 100%; padding: 10px 14px; border: 1px solid #E5E7EB; border-radius: 10px; font-size: 13px; color: #1F2937; resize: vertical; min-height: 80px; font-family: inherit; line-height: 1.5; transition: all .15s; background: #fff; }
+    .adcd-textarea::placeholder { color: #9CA3AF; font-size: 13px; }
+    .adcd-textarea:focus { outline: none; border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+    .adcd-modal-footer { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 16px 22px; border-top: 1px solid #E5E7EB; }
+    .adcd-btn-cancel { background: transparent; border: 1px solid #E5E7EB; color: #6B7280; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .adcd-btn-cancel:hover { background: #F9FAFB; color: #374151; border-color: #D1D5DB; }
+    .adcd-btn-update { background: #2563EB; border: none; color: #fff; padding: 8px 20px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 6px; }
+    .adcd-btn-update:hover { background: #1D4ED8; box-shadow: 0 4px 12px rgba(37,99,235,.3); }
+    .adcd-btn-update:active { transform: scale(.97); }
+    .adcd-btn-update:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; transform: none; }
+.adcd-feedback-section { background:#fff; border-radius:14px; border:1px solid #E2E8F0; overflow:hidden; margin-top:16px; box-shadow:0 1px 4px rgba(0,0,0,.05); }
+.adcd-feedback-header { display:flex; align-items:center; gap:8px; padding:14px 20px; border-bottom:1px solid #F1F5F9; font-size:.875rem; font-weight:700; color:#1A202C; }
+.adcd-feedback-header svg { color:#F59E0B; flex-shrink:0; }
+.adcd-feedback-body { padding:20px; display:flex; flex-direction:column; gap:16px; }
+.adcd-stars-row { display:flex; align-items:center; gap:8px; }
+.adcd-star { font-size:1.6rem; color:#E2E8F0; }
+.adcd-star.filled { color:#F59E0B; }
+.adcd-rating-num { font-size:1rem; font-weight:800; color:#1A202C; margin-left:4px; }
+.adcd-rating-label { font-size:.82rem; color:#6B7280; background:#F8FAFC; padding:3px 10px; border-radius:6px; }
+.adcd-feedback-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.adcd-fb-item { display:flex; flex-direction:column; gap:5px; background:#F8FAFC; padding:12px; border-radius:10px; }
+.adcd-fb-question { font-size:.72rem; font-weight:700; color:#94A3B8; text-transform:uppercase; letter-spacing:.5px; }
+.adcd-fb-answer { font-size:.875rem; font-weight:700; }
+.adcd-fb-answer.yes { color:#16A34A; }
+.adcd-fb-answer.no { color:#DC2626; }
+.adcd-feedback-comment { display:flex; flex-direction:column; gap:5px; }
+.adcd-fb-comment-text { font-size:.875rem; color:#374151; background:#F8FAFC; padding:12px; border-radius:10px; border-left:3px solid #1B3A6B; margin:0; line-height:1.6; }
+.adcd-fb-date { font-size:.72rem; color:#94A3B8; }
+.adcd-no-feedback { display:flex; align-items:center; gap:10px; padding:16px 20px; color:#D97706; font-size:.875rem; font-weight:500; background:#FFFBEB; border-radius:14px; border:1px solid #FDE68A; margin-top:16px; }
+</style>
+
+<div class="adcd-page">
+
+    @if (IsLoading)
+    {
+        <div class="adcd-loading">
+            <div class="adcd-spinner"></div>
+            <span>Loading complaint...</span>
+        </div>
+    }
+    else if (Complaint == null)
+    {
+        <div class="adcd-loading">
+            <span>Complaint not found</span>
+        </div>
+    }
+    else
+    {
+        @* Breadcrumb *@
+        <div class="adcd-breadcrumb">
+            <a href="/admin/complaints" class="adcd-back-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                Back
+            </a>
+            <span class="adcd-sep">/</span>
+            <span class="adcd-current">@Complaint.ComplaintNumber</span>
+        </div>
+
+        @* Header *@
+        <div class="adcd-header">
+            <div class="adcd-header-left">
+                <div class="adcd-num">@Complaint.ComplaintNumber</div>
+                <div class="adcd-meta">Submitted @Complaint.CreatedAt.ToString("MMM dd, yyyy") by @Complaint.CitizenName</div>
+            </div>
+            <div class="adcd-header-right">
+                <span class="adcd-badge adcd-status-@Complaint.StatusName.Replace(" ","")">
+                    <span class="adcd-badge-dot"></span>
+                    @Complaint.StatusName
+                </span>
+                <span class="adcd-priority adcd-priority-@Complaint.PriorityName">
+                    @(Complaint.Priority switch { PriorityLevel.Critical => "🔴", PriorityLevel.High => "🟠", PriorityLevel.Medium => "🟡", PriorityLevel.Low => "🟢", _ => "⚪" })
+                    @Complaint.PriorityName
+                </span>
+            </div>
+        </div>
+
+        @* Layout *@
+        <div class="adcd-layout">
+
+            @* ── MAIN ── *@
+            <div class="adcd-main">
+
+                @* Complaint Details *@
+                <div class="adcd-card">
+                    <div class="adcd-card-header">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                        Complaint Details
+                    </div>
+                    <div class="adcd-card-body">
+                        <h2 class="adcd-title">@Complaint.Title</h2>
+                        <p class="adcd-desc">@Complaint.Description</p>
+                        <div class="adcd-actions">
+                            <button class="adcd-btn adcd-btn-primary" @onclick="OpenStatusModal">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                    <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                                </svg>
+                                Update Status
+                            </button>
+                            <button class="adcd-btn adcd-btn-danger" @onclick="ArchiveComplaint">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                    <path d="M21 4H3"/><path d="M8 2v2"/><path d="M16 2v2"/><rect x="4" y="6" width="16" height="16" rx="2"/><path d="M10 11h4"/><path d="M12 9v4"/>
+                                </svg>
+                                Archive
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                @* Attachments *@
+                @if (Complaint.Attachments.Count > 0)
+                {
+                    <div class="adcd-card">
+                        <div class="adcd-card-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                            </svg>
+                            Attachments (@Complaint.Attachments.Count)
+                        </div>
+                        <div class="adcd-card-body">
+                            <div class="adcd-att-grid">
+                                @foreach (var att in Complaint.Attachments)
+                                {
+                                    var isImage = att.FileType.StartsWith("image/");
+                                    <a href="@att.FilePath" target="_blank" class="adcd-att-item" title="@att.FileName">
+                                        @if (isImage)
+                                        {
+                                            <img src="@att.FilePath" alt="@att.FileName" class="adcd-att-img" />
+                                        }
+                                        else
+                                        {
+                                            <div class="adcd-att-file">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                                    <polyline points="14 2 14 8 20 8"/>
+                                                </svg>
+                                                <span>@att.FileName</span>
+                                            </div>
+                                        }
+                                        <div class="adcd-att-name">@att.FileName</div>
+                                    </a>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* Map *@
+                @if (Complaint.Latitude.HasValue && Complaint.Longitude.HasValue)
+                {
+                    <div class="adcd-card">
+                        <div class="adcd-card-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+                            </svg>
+                            Location
+                        </div>
+                        <div class="adcd-card-body">
+                            <div id="admin-detail-map" class="adcd-map"></div>
+                            @if (!string.IsNullOrEmpty(Complaint.LocationDescription))
+                            {
+                                <p style="font-size:12px;color:#6B7280;margin:8px 0 0;">@Complaint.LocationDescription</p>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* Status Timeline *@
+                @if (Complaint.StatusHistories.Count > 0)
+                {
+                    <div class="adcd-card">
+                        <div class="adcd-card-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Status Timeline
+                        </div>
+                        <div class="adcd-card-body">
+                            <div class="adcd-timeline">
+                                @foreach (var sh in Complaint.StatusHistories.OrderBy(s => s.CreatedAt))
+                                {
+                                    var dotClass = (sh.ToStatus == "Resolved" || sh.ToStatus == "Closed") ? "resolved"
+                                        : (sh.ToStatus == "Rejected" ? "rejected" : "active");
+                                    <div class="adcd-tl-item">
+                                        <div class="adcd-tl-dot @dotClass"></div>
+                                        <div class="adcd-tl-title">
+                                            @if (!string.IsNullOrEmpty(sh.FromStatus))
+                                            {
+                                                <span class="adcd-tl-arrow">@sh.FromStatus → @sh.ToStatus</span>
+                                            }
+                                            else
+                                            {
+                                                <span>@sh.ToStatus</span>
+                                            }
+                                        </div>
+                                        <div class="adcd-tl-meta">by @sh.ChangedByName · @sh.CreatedAt.ToString("MMM dd, yyyy h:mm tt")</div>
+                                        @if (!string.IsNullOrEmpty(sh.Note))
+                                        {
+                                            <div class="adcd-tl-note">@sh.Note</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* Feedback *@
+                @if (Complaint?.Status == ComplaintStatus.Resolved && feedback != null)
+                {
+                    <div class="adcd-feedback-section">
+                        <div class="adcd-feedback-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                            </svg>
+                            Citizen Feedback
+                        </div>
+                        <div class="adcd-feedback-body">
+                            <div class="adcd-stars-row">
+                                @for (int i = 1; i <= 5; i++)
+                                {
+                                    <span class="adcd-star @(i <= feedback.Rating ? "filled" : "")">★</span>
+                                }
+                                <span class="adcd-rating-num">@feedback.Rating / 5</span>
+                                <span class="adcd-rating-label">@GetRatingLabel(feedback.Rating)</span>
+                            </div>
+                            <div class="adcd-feedback-grid">
+                                <div class="adcd-fb-item">
+                                    <span class="adcd-fb-question">Resolution satisfactory?</span>
+                                    <span class="adcd-fb-answer @(feedback.WasResolutionSatisfactory ? "yes" : "no")">
+                                        @(feedback.WasResolutionSatisfactory ? "👍 Yes" : "👎 No")
+                                    </span>
+                                </div>
+                                <div class="adcd-fb-item">
+                                    <span class="adcd-fb-question">Response timely?</span>
+                                    <span class="adcd-fb-answer @(feedback.WasResponseTimely ? "yes" : "no")">
+                                        @(feedback.WasResponseTimely ? "👍 Yes" : "👎 No")
+                                    </span>
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrEmpty(feedback.Comment))
+                            {
+                                <div class="adcd-feedback-comment">
+                                    <span class="adcd-fb-question">Comment</span>
+                                    <p class="adcd-fb-comment-text">@feedback.Comment</p>
+                                </div>
+                            }
+                            <span class="adcd-fb-date">Submitted @feedback.CreatedAt.ToString("MMM dd, yyyy")</span>
+                        </div>
+                    </div>
+                }
+                else if (Complaint?.Status == ComplaintStatus.Resolved && feedback == null)
+                {
+                    <div class="adcd-no-feedback">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:#D97706;flex-shrink:0;">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="12"/>
+                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        Citizen has not submitted feedback yet
+                    </div>
+                }
+
+                @* Audit Trail *@
+                @if (AuditLogs.Count > 0)
+                {
+                    <div class="adcd-card">
+                        <div class="adcd-card-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                            </svg>
+                            Audit Trail
+                        </div>
+                        <div class="adcd-audit">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Action</th>
+                                        <th>User</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var log in AuditLogs)
+                                    {
+                                        <tr>
+                                            <td style="white-space:nowrap;">@log.CreatedAt.ToString("MMM dd h:mm tt")</td>
+                                            <td><span class="adcd-audit-action">@log.Action</span></td>
+                                            <td>@log.UserName</td>
+                                            <td>@log.Description</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+            </div>
+
+            @* ── SIDEBAR ── *@
+            <div class="adcd-sidebar">
+
+                @* Meta info *@
+                <div class="adcd-sidebar-card">
+                    <div class="adcd-sidebar-body">
+                        <div class="adcd-meta-item">
+                            <span class="adcd-meta-label">Citizen</span>
+                            <span class="adcd-meta-value">@Complaint.CitizenName</span>
+                        </div>
+                        <div class="adcd-meta-item">
+                            <span class="adcd-meta-label">Category</span>
+                            <span class="adcd-meta-value">
+                                <span class="adcd-cat-pill" style="background:@Complaint.CategoryColor">
+                                    @Complaint.CategoryName
+                                </span>
+                            </span>
+                        </div>
+                        <div class="adcd-meta-item">
+                            <span class="adcd-meta-label">Assigned To</span>
+                            <span class="adcd-meta-value">@(string.IsNullOrEmpty(Complaint.AssignedAdminName) ? "—" : Complaint.AssignedAdminName)</span>
+                        </div>
+                        <div class="adcd-meta-item">
+                            <span class="adcd-meta-label">Priority</span>
+                            <span class="adcd-meta-value">@Complaint.PriorityName</span>
+                        </div>
+                        <div class="adcd-meta-item">
+                            <span class="adcd-meta-label">AI Categorized</span>
+                            <span class="adcd-meta-value">@(Complaint.IsAiCategorized ? "Yes" : "No")</span>
+                        </div>
+                        <div class="adcd-meta-item">
+                            <span class="adcd-meta-label">Updated</span>
+                            <span class="adcd-meta-value">@Complaint.UpdatedAt.ToString("MMM dd, yyyy")</span>
+                        </div>
+                    </div>
+                </div>
+
+                @* SLA *@
+                <div class="adcd-sla-card">
+                    <div class="adcd-sla-title">SLA Status</div>
+                    @if (Complaint.SlaDeadline.HasValue)
+                    {
+                        var remaining = (Complaint.SlaDeadline.Value - DateTime.UtcNow).TotalHours;
+                        var total = (Complaint.SlaDeadline.Value - Complaint.CreatedAt).TotalHours;
+                        var pct = total > 0 ? Math.Clamp(remaining / total * 100, 0, 100) : 0;
+                        var slaClass = Complaint.IsSlaBreached ? "adcd-sla-danger"
+                            : (remaining < total * 0.2 ? "adcd-sla-danger"
+                                : (remaining < total * 0.5 ? "adcd-sla-warn" : "adcd-sla-ok"));
+                        var barColor = Complaint.IsSlaBreached ? "#DC2626"
+                            : (remaining < total * 0.2 ? "#DC2626"
+                                : (remaining < total * 0.5 ? "#D97706" : "#10B981"));
+                        <div class="adcd-sla-bar-track">
+                            <div class="adcd-sla-bar-fill" style="width:@pct%;background:@barColor;"></div>
+                        </div>
+                        <div class="adcd-sla-text @slaClass">
+                            @if (Complaint.IsSlaBreached)
+                            {
+                                <span>SLA Breached</span>
+                            }
+                            else if (remaining <= 0)
+                            {
+                                <span>Due now</span>
+                            }
+                            else if (remaining < 1)
+                            {
+                                <span>@((int)(remaining * 60)) minutes remaining</span>
+                            }
+                            else
+                            {
+                                <span>@($"{remaining:F1}")h remaining</span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="adcd-sla-text adcd-sla-ok">No SLA deadline</div>
+                    }
+                </div>
+
+            </div>
+
+        </div>
+    }
+
+    @* Update Status Modal *@
+    @if (ShowStatusModal)
+    {
+        <div class="adcd-modal-overlay" @onclick="() => ShowStatusModal = false">
+            <div class="adcd-modal" @onclick:stopPropagation>
+                <div class="adcd-modal-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" width="16" height="16">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                    </svg>
+                    <span>Update Status</span>
+                    <button class="adcd-modal-close" @onclick="() => ShowStatusModal = false">&times;</button>
+                </div>
+                <div class="adcd-modal-body">
+                    <div class="adcd-form-group">
+                        <label>New Status</label>
+                        <div class="adcd-status-options">
+                            @foreach (var s in Enum.GetValues<ComplaintStatus>())
+                            {
+                                @if (IsValidTransition(Complaint!.Status, s))
+                                {
+                                    var selected = NewStatus == s;
+                                    <div class="adcd-status-option @(selected ? "selected" : "")" @onclick="() => NewStatus = s">
+                                        <span class="adcd-status-dot @s"></span>
+                                        <span class="adcd-status-label">@GetStatusLabel(s)</span>
+                                        <span class="adcd-status-check"></span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                    <div class="adcd-form-group">
+                        <label>Note</label>
+                        <textarea class="adcd-textarea" @bind="StatusNote" placeholder="Add a note about this change..." maxlength="500"></textarea>
+                    </div>
+                </div>
+                <div class="adcd-modal-footer">
+                    <button class="adcd-btn-cancel" @onclick="() => ShowStatusModal = false">Cancel</button>
+                    <button class="adcd-btn-update" @onclick="UpdateStatus" disabled="@(!IsValidTransition(Complaint?.Status ?? ComplaintStatus.Pending, NewStatus))">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        Update
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private ComplaintDto? Complaint;
+    private List<AuditLogDto> AuditLogs = new();
+    private FeedbackDto? feedback;
+    private bool IsLoading = true;
+    private bool ShowStatusModal;
+    private ComplaintStatus NewStatus;
+    private string StatusNote = "";
+    private int AdminId;
+    private bool _mapInitialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        AdminId = int.Parse(user.FindFirst("userId")?.Value ?? "0");
+
+        try
+        {
+            Complaint = await ComplaintService.GetByIdAsync(Id);
+            AuditLogs = await AuditLogService.GetForComplaintAsync(Id);
+
+            if (Complaint?.Status == ComplaintStatus.Resolved)
+            {
+                feedback = await FeedbackService.GetByComplaintAsync(Id);
+            }
+        }
+        catch { Navigation.NavigateTo("/admin/complaints"); }
+
+        IsLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_mapInitialized && Complaint?.Latitude.HasValue == true && Complaint?.Longitude.HasValue == true)
+        {
+            _mapInitialized = true;
+            await JS.InvokeVoidAsync("CivicMap.initViewMap", "admin-detail-map",
+                Complaint.Latitude.Value, Complaint.Longitude.Value, Complaint.Title);
+        }
+    }
+
+    private bool IsValidTransition(ComplaintStatus from, ComplaintStatus to)
+    {
+        return (from, to) switch
+        {
+            (ComplaintStatus.Pending, ComplaintStatus.UnderReview) => true,
+            (ComplaintStatus.Pending, ComplaintStatus.Rejected) => true,
+            (ComplaintStatus.UnderReview, ComplaintStatus.InProgress) => true,
+            (ComplaintStatus.UnderReview, ComplaintStatus.Rejected) => true,
+            (ComplaintStatus.InProgress, ComplaintStatus.Resolved) => true,
+            (ComplaintStatus.InProgress, ComplaintStatus.Rejected) => true,
+            (ComplaintStatus.Resolved, ComplaintStatus.Closed) => true,
+            (ComplaintStatus.Resolved, ComplaintStatus.Reopened) => false,
+            (ComplaintStatus.Reopened, ComplaintStatus.InProgress) => true,
+            (ComplaintStatus.Reopened, ComplaintStatus.Rejected) => true,
+            _ => false
+        };
+    }
+
+    private void OpenStatusModal()
+    {
+        NewStatus = Enum.GetValues<ComplaintStatus>().FirstOrDefault(s => s != Complaint?.Status && IsValidTransition(Complaint?.Status ?? ComplaintStatus.Pending, s));
+        ShowStatusModal = true;
+    }
+
+    private string GetStatusLabel(ComplaintStatus s) => s switch
+    {
+        ComplaintStatus.Pending => "Pending",
+        ComplaintStatus.UnderReview => "Under Review",
+        ComplaintStatus.InProgress => "In Progress",
+        ComplaintStatus.Resolved => "Resolved",
+        ComplaintStatus.Closed => "Closed",
+        ComplaintStatus.Rejected => "Rejected",
+        ComplaintStatus.Reopened => "Reopened",
+        _ => s.ToString()
+    };
+
+    private async Task UpdateStatus()
+    {
+        if (Complaint == null) return;
+        try
+        {
+            Complaint = await ComplaintService.UpdateStatusAsync(Id, NewStatus, StatusNote, AdminId);
+            ShowStatusModal = false;
+            StatusNote = "";
+            AuditLogs = await AuditLogService.GetForComplaintAsync(Id);
+        }
+        catch { }
+    }
+
+    private async Task ArchiveComplaint()
+    {
+        await ComplaintService.ArchiveComplaintAsync(Id);
+        Navigation.NavigateTo("/admin/complaints");
+    }
+
+    private static string GetRatingLabel(int rating) => rating switch
+    {
+        1 => "Very Dissatisfied",
+        2 => "Dissatisfied",
+        3 => "Neutral",
+        4 => "Satisfied",
+        5 => "Very Satisfied",
+        _ => ""
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("CivicMap.destroyMap", "admin-detail-map");
+        }
+        catch { }
+    }
+}

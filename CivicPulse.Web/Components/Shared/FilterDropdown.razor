@@ -1,0 +1,121 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="fdd-wrap" id="fdd-@_elementId">
+    <button class="fdd-trigger @(HasValue ? "fdd-has-value" : "") @(Open ? "fdd-open" : "")"
+            type="button"
+            @onclick="Toggle"
+            @onclick:stopPropagation>
+        @if (!string.IsNullOrEmpty(IconSvg))
+        {
+            <span class="fdd-icon">@((MarkupString)IconSvg)</span>
+        }
+        <span class="fdd-label">@(HasValue ? SelectedLabel : Placeholder)</span>
+        <svg class="fdd-chevron @(Open ? "fdd-rotated" : "")"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12">
+            <polyline points="6 9 12 15 18 9"/>
+        </svg>
+    </button>
+
+    @if (Open)
+    {
+        <div class="fdd-panel @(Scrollable ? "fdd-scrollable" : "")">
+            <button class="fdd-option @(!HasValue ? "fdd-selected" : "")"
+                    type="button"
+                    @onclick="() => Select(null, AllLabel)">
+                <span class="fdd-dot" style="background:#CBD5E0"></span>
+                <span>@AllLabel</span>
+                @if (!HasValue)
+                {
+                    <svg class="fdd-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                }
+            </button>
+            @foreach (var opt in Options)
+            {
+                var v = opt.Value;
+                var l = opt.Label;
+                var c = opt.Color;
+                <button class="fdd-option @(SelectedValue == v ? "fdd-selected" : "")"
+                        type="button"
+                        @onclick="() => Select(v, l)">
+                    <span class="fdd-dot" style="background:@c"></span>
+                    <span>@l</span>
+                    @if (SelectedValue == v)
+                    {
+                        <svg class="fdd-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                    }
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Select...";
+    [Parameter] public string AllLabel { get; set; } = "All";
+    [Parameter] public string IconSvg { get; set; } = "";
+    [Parameter] public string? SelectedValue { get; set; }
+    [Parameter] public string SelectedLabel { get; set; } = "";
+    [Parameter] public List<DropdownOption> Options { get; set; } = new();
+    [Parameter] public EventCallback<string?> OnSelectionChanged { get; set; }
+    [Parameter] public bool Scrollable { get; set; } = false;
+
+    private string _elementId = $"fdd-{Guid.NewGuid():N}";
+    private bool _registered;
+    private bool HasValue => !string.IsNullOrEmpty(SelectedValue);
+
+    private async Task Toggle()
+    {
+        if (!Open)
+        {
+            await JS.InvokeVoidAsync("CivicInterop.closeAllDropdowns", _elementId);
+        }
+        await OpenChanged.InvokeAsync(!Open);
+    }
+
+    private async Task Select(string? value, string label)
+    {
+        SelectedValue = value;
+        SelectedLabel = label;
+        await OpenChanged.InvokeAsync(false);
+        await OnSelectionChanged.InvokeAsync(value);
+    }
+
+    [JSInvokable]
+    public async Task CloseDropdown()
+    {
+        if (Open)
+        {
+            await OpenChanged.InvokeAsync(false);
+            StateHasChanged();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_registered)
+        {
+            _registered = true;
+            var dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("CivicInterop.registerDropdown", _elementId, dotNetRef);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_registered)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("CivicInterop.unregisterDropdown", _elementId);
+            }
+            catch { }
+        }
+    }
+}

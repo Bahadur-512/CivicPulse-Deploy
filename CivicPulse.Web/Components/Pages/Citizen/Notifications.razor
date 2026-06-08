@@ -1,0 +1,285 @@
+@page "/citizen/notifications"
+@layout CitizenLayout
+@attribute [Authorize(Policy = "CitizenOnly")]
+@inject INotificationService NotificationService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<div class="notif-page">
+
+    <!-- PAGE HEADER -->
+    <div class="notif-page-header">
+        <div class="notif-header-left">
+            <h1 class="notif-page-title">
+                <i class="bi bi-bell-fill"></i>
+                Notifications
+            </h1>
+            @if (unreadCount > 0)
+            {
+                <span class="notif-unread-badge">@unreadCount unread</span>
+            }
+        </div>
+        <div class="notif-header-right">
+            @if (notifications.Any(n => !n.IsRead))
+            {
+                <button class="notif-mark-all-btn" @onclick="MarkAllRead">
+                    <i class="bi bi-check2-all"></i>
+                    Mark All Read
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- FILTER TABS -->
+    <div class="notif-tabs">
+        <button class="notif-tab @(activeTab == "all" ? "active" : "")"
+                @onclick='() => SetTab("all")'>
+            All
+            @if (notifications.Any())
+            {
+                <span class="notif-tab-count">@notifications.Count</span>
+            }
+        </button>
+        <button class="notif-tab @(activeTab == "unread" ? "active" : "")"
+                @onclick='() => SetTab("unread")'>
+            Unread
+            @if (unreadCount > 0)
+            {
+                <span class="notif-tab-count unread">@unreadCount</span>
+            }
+        </button>
+        <button class="notif-tab @(activeTab == "status" ? "active" : "")"
+                @onclick='() => SetTab("status")'>
+            Status Updates
+        </button>
+        <button class="notif-tab @(activeTab == "sla" ? "active" : "")"
+                @onclick='() => SetTab("sla")'>
+            SLA Alerts
+        </button>
+    </div>
+
+    <!-- NOTIFICATION LIST -->
+    @if (isLoading)
+    {
+        <div class="notif-card">
+            @for (int i = 0; i < 5; i++)
+            {
+                <div class="notif-skeleton-row">
+                    <div class="skeleton notif-sk-icon"></div>
+                    <div class="notif-sk-body">
+                        <div class="skeleton notif-sk-title"></div>
+                        <div class="skeleton notif-sk-sub"></div>
+                    </div>
+                    <div class="skeleton notif-sk-time"></div>
+                </div>
+            }
+        </div>
+    }
+    else if (!FilteredNotifications.Any())
+    {
+        <div class="notif-empty-state">
+            <div class="notif-empty-icon">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <circle cx="40" cy="40" r="38" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="2"/>
+                    <path d="M40 20c-1.1 0-2 .9-2 2v2.1C31.2 25.5 26 31.2 26 38v8l-3 3v1.5h34V49l-3-3v-8c0-6.8-5.2-12.5-12-13.9V22c0-1.1-.9-2-2-2z" fill="#93C5FD" opacity="0.6"/>
+                    <path d="M36.5 53c0 1.9 1.6 3.5 3.5 3.5s3.5-1.6 3.5-3.5H36.5z" fill="#60A5FA"/>
+                </svg>
+            </div>
+            <h3>
+                @(activeTab == "unread" ? "No unread notifications" :
+                  activeTab == "status" ? "No status updates" :
+                  activeTab == "sla" ? "No SLA alerts" :
+                  "No notifications yet")
+            </h3>
+            <p>
+                @(activeTab == "all" ?
+                    "You'll receive notifications when your complaint status changes or SLA deadlines approach." :
+                    "Switch to 'All' to see your full notification history.")
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="notif-card">
+            @foreach (var notif in FilteredNotifications)
+            {
+                <div class="notif-item @(notif.IsRead ? "read" : "unread")"
+                     @onclick="() => HandleNotificationClick(notif)">
+
+                    <div class="notif-icon-wrap notif-icon-@GetNotifIconClass(notif.Type)">
+                        <i class="bi @GetNotifIcon(notif.Type)"></i>
+                    </div>
+
+                    <div class="notif-body">
+                        <div class="notif-title-row">
+                            <span class="notif-title">@notif.Title</span>
+                            @if (!notif.IsRead)
+                            {
+                                <span class="notif-new-dot"></span>
+                            }
+                        </div>
+                        <p class="notif-message">@notif.Body</p>
+                        @if (notif.RelatedComplaintId.HasValue)
+                        {
+                            <a href="/citizen/complaints/@notif.RelatedComplaintId"
+                               class="notif-complaint-link"
+                               @onclick:stopPropagation="true">
+                                <i class="bi bi-arrow-right-circle"></i>
+                                View Complaint
+                            </a>
+                        }
+                    </div>
+
+                    <div class="notif-meta">
+                        <span class="notif-time">@GetRelativeTime(notif.CreatedAt)</span>
+                        <span class="notif-type-chip notif-chip-@GetNotifIconClass(notif.Type)">
+                            @GetNotifTypeLabel(notif.Type)
+                        </span>
+                        @if (!notif.IsRead)
+                        {
+                            <button class="notif-read-btn"
+                                    @onclick="() => MarkRead(notif.Id)"
+                                    @onclick:stopPropagation="true"
+                                    title="Mark as read">
+                                <i class="bi bi-check2"></i>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (TotalPages > 1)
+        {
+            <div class="notif-pagination">
+                <span class="notif-page-info">
+                    Page @currentPage of @TotalPages
+                </span>
+                <div class="notif-page-controls">
+                    <button class="notif-page-btn" @onclick="PrevPage" disabled="@(currentPage == 1)">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    @for (int p = 1; p <= TotalPages; p++)
+                    {
+                        var pg = p;
+                        <button class="notif-page-btn @(currentPage == pg ? "active" : "")"
+                                @onclick="() => GoToPage(pg)">
+                            @pg
+                        </button>
+                    }
+                    <button class="notif-page-btn" @onclick="NextPage" disabled="@(currentPage == TotalPages)">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        }
+    }
+
+</div>
+
+@code {
+    private List<NotificationDto> notifications = new();
+    private int unreadCount = 0;
+    private bool isLoading = true;
+    private string activeTab = "all";
+    private int currentPage = 1;
+    private int pageSize = 15;
+    private int TotalPages = 1;
+    private int citizenId = 0;
+
+    private IEnumerable<NotificationDto> FilteredNotifications => activeTab switch
+    {
+        "unread" => notifications.Where(n => !n.IsRead),
+        "status" => notifications.Where(n => GetNotifType(n.Type) == NotificationType.StatusUpdate),
+        "sla"    => notifications.Where(n => GetNotifType(n.Type) == NotificationType.SlaWarning),
+        _        => notifications
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        citizenId = int.Parse(authState.User.FindFirst("userId")?.Value ?? "0");
+        await LoadNotifications();
+    }
+
+    private async Task LoadNotifications()
+    {
+        isLoading = true;
+        var result = await NotificationService.GetAllForUserAsync(citizenId, currentPage, pageSize);
+        notifications = result.Items.ToList();
+        TotalPages = result.TotalPages;
+        unreadCount = NotificationService.GetUnreadCount(citizenId);
+        isLoading = false;
+    }
+
+    private async Task MarkRead(int notifId)
+    {
+        await NotificationService.MarkAsReadAsync(notifId, citizenId);
+        var notif = notifications.FirstOrDefault(n => n.Id == notifId);
+        if (notif != null) { notif.IsRead = true; unreadCount = Math.Max(0, unreadCount - 1); }
+        StateHasChanged();
+    }
+
+    private async Task MarkAllRead()
+    {
+        await NotificationService.MarkAllAsReadAsync(citizenId);
+        notifications.ForEach(n => n.IsRead = true);
+        unreadCount = 0;
+        StateHasChanged();
+    }
+
+    private async Task HandleNotificationClick(NotificationDto notif)
+    {
+        if (!notif.IsRead) await MarkRead(notif.Id);
+        if (notif.RelatedComplaintId.HasValue)
+            Navigation.NavigateTo($"/citizen/complaints/{notif.RelatedComplaintId}");
+    }
+
+    private void SetTab(string tab) { activeTab = tab; currentPage = 1; }
+
+    private async Task PrevPage() { if (currentPage > 1) { currentPage--; await LoadNotifications(); } }
+
+    private async Task NextPage() { if (currentPage < TotalPages) { currentPage++; await LoadNotifications(); } }
+
+    private async Task GoToPage(int p) { currentPage = p; await LoadNotifications(); }
+
+    private NotificationType GetNotifType(string typeStr) =>
+        Enum.TryParse<NotificationType>(typeStr, out var t) ? t : NotificationType.StatusUpdate;
+
+    private string GetNotifIcon(string type) => GetNotifType(type) switch
+    {
+        NotificationType.StatusUpdate    => "bi-arrow-repeat",
+        NotificationType.SlaWarning      => "bi-clock-history",
+        NotificationType.FeedbackRequest => "bi-star-half",
+        NotificationType.SystemAlert     => "bi-info-circle-fill",
+        _ => "bi-bell-fill"
+    };
+
+    private string GetNotifIconClass(string type) => GetNotifType(type) switch
+    {
+        NotificationType.StatusUpdate    => "status",
+        NotificationType.SlaWarning      => "sla",
+        NotificationType.FeedbackRequest => "feedback",
+        NotificationType.SystemAlert     => "system",
+        _ => "default"
+    };
+
+    private string GetNotifTypeLabel(string type) => GetNotifType(type) switch
+    {
+        NotificationType.StatusUpdate    => "Status",
+        NotificationType.SlaWarning      => "SLA Alert",
+        NotificationType.FeedbackRequest => "Feedback",
+        NotificationType.SystemAlert     => "System",
+        _ => "Notification"
+    };
+
+    private string GetRelativeTime(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt;
+        if (diff.TotalMinutes < 1)  return "Just now";
+        if (diff.TotalHours < 1)    return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalDays < 1)     return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7)     return $"{(int)diff.TotalDays}d ago";
+        return dt.ToString("MMM dd, yyyy");
+    }
+}

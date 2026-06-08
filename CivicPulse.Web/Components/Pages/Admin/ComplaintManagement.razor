@@ -1,0 +1,476 @@
+@page "/admin/complaints"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@inject IComplaintService ComplaintService
+@inject ICategoryService CategoryService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+
+<style>
+    .ac-page { }
+    .ac-page-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:22px; }
+    .ac-page-title { font-size:1.35rem; font-weight:800; color:#1A202C; margin:0; display:flex; align-items:center; gap:10px; }
+    .ac-page-title i { color:#00897B; }
+    .ac-export-btn { background:#fff; border:1px solid #E2E8F0; color:#475569; padding:8px 16px; border-radius:8px; font-size:.82rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:7px; transition:all .15s; }
+    .ac-export-btn:hover { background:#F8FAFC; border-color:#CBD5E1; color:#1A202C; }
+    .ac-filter-card { background:#fff; border-radius:12px; border:1px solid #E2E8F0; padding:18px 22px; margin-bottom:20px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+    .ac-filter-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .ac-search-wrap { position:relative; flex:1; min-width:200px; }
+    .ac-search-icon { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#94A3B8; font-size:.9rem; pointer-events:none; }
+    .ac-search-input { width:100%; padding:9px 12px 9px 36px; border:1px solid #E2E8F0; border-radius:8px; font-size:.85rem; color:#1E293B; background:#F8FAFC; outline:none; transition:all .15s; }
+    .ac-search-input:focus { border-color:#00897B; background:#fff; box-shadow:0 0 0 3px rgba(0,137,123,.12); }
+    .ac-search-clear { position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; color:#94A3B8; cursor:pointer; padding:4px; border-radius:4px; font-size:.8rem; }
+    .ac-search-clear:hover { color:#475569; background:#F1F5F9; }
+    .ac-select-wrap { position:relative; min-width:150px; }
+    .ac-select-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#94A3B8; font-size:.75rem; pointer-events:none; }
+    .ac-select { width:100%; padding:9px 10px 9px 28px; border:1px solid #E2E8F0; border-radius:8px; font-size:.85rem; color:#1E293B; background:#F8FAFC; outline:none; appearance:none; cursor:pointer; transition:all .15s; }
+    .ac-select:focus { border-color:#00897B; background:#fff; box-shadow:0 0 0 3px rgba(0,137,123,.12); }
+    .ac-select-arrow { position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#94A3B8; font-size:.6rem; pointer-events:none; }
+    .ac-btn-primary { background:#00897B; border:none; color:#fff; padding:9px 18px; border-radius:8px; font-size:.82rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px; transition:all .15s; white-space:nowrap; }
+    .ac-btn-primary:hover { background:#00695C; }
+    .ac-btn-secondary { background:#F1F5F9; border:1px solid #E2E8F0; color:#475569; padding:9px 18px; border-radius:8px; font-size:.82rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px; transition:all .15s; white-space:nowrap; }
+    .ac-btn-secondary:hover { background:#E2E8F0; color:#1E293B; }
+    .ac-active-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px; padding-top:12px; border-top:1px solid #F1F5F9; }
+    .ac-chip-label { font-size:.72rem; font-weight:600; color:#94A3B8; text-transform:uppercase; letter-spacing:.5px; }
+    .ac-filter-chip { display:flex; align-items:center; gap:5px; background:#EFF6FF; color:#1D4ED8; padding:4px 10px; border-radius:6px; font-size:.78rem; font-weight:600; }
+    .ac-filter-chip button { background:none; border:none; color:#1D4ED8; cursor:pointer; padding:0; font-size:.75rem; line-height:1; }
+    .ac-filter-chip button:hover { color:#1E40AF; }
+    .ac-table-card { background:#fff; border-radius:12px; border:1px solid #E2E8F0; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+    .ac-table { width:100%; border-collapse:collapse; }
+    .ac-table th { padding:12px 16px; font-size:.72rem; font-weight:700; color:#64748B; text-transform:uppercase; letter-spacing:.5px; text-align:left; background:#F8FAFC; border-bottom:1px solid #E2E8F0; white-space:nowrap; }
+    .ac-table td { padding:14px 16px; font-size:.84rem; color:#334155; border-bottom:1px solid #F1F5F9; }
+    .ac-table tr:last-child td { border-bottom:none; }
+    .ac-table tr:hover td { background:#FAFBFC; }
+    .ac-complaint-num { font-family:var(--cp-font-mono,monospace); font-weight:700; font-size:.8rem; color:#00897B; text-decoration:none; }
+    .ac-complaint-num:hover { text-decoration:underline; }
+    .ac-title-cell { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
+    .ac-cat-chip { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:6px; font-size:.75rem; font-weight:600; white-space:nowrap; }
+    .ac-status-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:.75rem; font-weight:700; white-space:nowrap; }
+    .ac-status-dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
+    .ac-status-pending { background:#FEF3C7; color:#B45309; }
+    .ac-status-pending .ac-status-dot { background:#F59E0B; }
+    .ac-status-underreview { background:#DBEAFE; color:#1D4ED8; }
+    .ac-status-underreview .ac-status-dot { background:#3B82F6; }
+    .ac-status-inprogress { background:#E0F2FE; color:#0369A1; }
+    .ac-status-inprogress .ac-status-dot { background:#0EA5E9; }
+    .ac-status-resolved { background:#D1FAE5; color:#047857; }
+    .ac-status-resolved .ac-status-dot { background:#10B981; }
+    .ac-status-closed { background:#F1F5F9; color:#475569; }
+    .ac-status-closed .ac-status-dot { background:#64748B; }
+    .ac-status-rejected { background:#FEE2E2; color:#B91C1C; }
+    .ac-status-rejected .ac-status-dot { background:#EF4444; }
+    .ac-status-reopened { background:#F3E8FF; color:#7C3AED; }
+    .ac-status-reopened .ac-status-dot { background:#A855F7; }
+    .ac-urgency-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:.68rem; font-weight:700; background:#FFF7ED; color:#C2410C; border:1px solid #FED7AA; margin-left:6px; }
+    .ac-priority-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:6px; font-size:.73rem; font-weight:700; }
+    .ac-priority-critical { background:#FEE2E2; color:#991B1B; }
+    .ac-priority-high { background:#FFEDD5; color:#C2410C; }
+    .ac-priority-medium { background:#FEF3C7; color:#B45309; }
+    .ac-priority-low { background:#D1FAE5; color:#047857; }
+    .amc-select-active { border-color:#1B3A6B; background:#EFF6FF; color:#1B3A6B; font-weight:600; }
+    .ac-date-cell { font-size:.78rem; color:#64748B; white-space:nowrap; }
+    .ac-sla-cell { min-width:130px; }
+    .ac-view-btn { display:inline-flex; align-items:center; gap:4px; color:#00897B; font-size:.78rem; font-weight:700; text-decoration:none; padding:4px 10px; border-radius:6px; transition:all .15s; }
+    .ac-view-btn:hover { background:#E0F2F1; }
+    .ac-empty { text-align:center; padding:60px 20px; color:#94A3B8; }
+    .ac-empty-icon { font-size:2.5rem; margin-bottom:12px; }
+    .ac-empty h3 { font-size:1rem; color:#475569; margin:0 0 6px; }
+    .ac-empty p { font-size:.85rem; margin:0 0 16px; }
+    .ac-pagination { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:16px 22px; background:#fff; border-top:1px solid #E2E8F0; }
+    .ac-page-info { font-size:.8rem; color:#64748B; }
+    .ac-page-controls { display:flex; align-items:center; gap:4px; }
+    .ac-page-btn { min-width:32px; height:32px; display:flex; align-items:center; justify-content:center; border:1px solid #E2E8F0; border-radius:6px; background:#fff; color:#475569; font-size:.8rem; font-weight:600; cursor:pointer; transition:all .15s; padding:0 8px; }
+    .ac-page-btn:hover:not(:disabled):not(.active) { background:#F1F5F9; border-color:#CBD5E1; }
+    .ac-page-btn.active { background:#00897B; border-color:#00897B; color:#fff; }
+    .ac-page-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .ac-skeleton { background:linear-gradient(90deg,#F1F5F9 25%,#E2E8F0 50%,#F1F5F9 75%); background-size:200% 100%; animation:ac-shimmer 1.5s infinite; border-radius:8px; height:48px; margin-bottom:8px; }
+    @@keyframes ac-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    @@media (max-width:768px) {
+        .ac-filter-row { flex-direction:column; align-items:stretch; }
+        .ac-select-wrap { min-width:unset; }
+    }
+</style>
+
+<div class="ac-page">
+
+    <div class="ac-page-header">
+        <h1 class="ac-page-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#00897B" stroke-width="2" width="22" height="22" style="flex-shrink:0">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                <rect x="9" y="3" width="6" height="4" rx="1"/>
+                <line x1="9" y1="12" x2="15" y2="12"/>
+                <line x1="9" y1="16" x2="13" y2="16"/>
+            </svg>
+            Manage Complaints
+        </h1>
+        <button class="ac-export-btn" @onclick="ExportCsv">
+            <i class="bi bi-download"></i>
+            Export CSV
+        </button>
+    </div>
+
+    <div class="ac-filter-card">
+        <div class="amc-filter-bar">
+
+            <!-- Search -->
+            <div class="amc-search-wrap">
+                <svg class="amc-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input class="amc-search-input"
+                       type="text"
+                       placeholder="Search complaints..."
+                       autocomplete="off"
+                       @bind="Filter.SearchTerm"
+                       @bind:event="oninput"
+                       @onkeydown="HandleKeyDown" />
+                @if (!string.IsNullOrEmpty(Filter.SearchTerm))
+                {
+                    <button class="amc-search-clear" @onclick="() => { Filter.SearchTerm = string.Empty; ApplyFilter(); }">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                }
+            </div>
+
+            <!-- Status -->
+            <FilterDropdown Open="@_statusOpen"
+                            OpenChanged="(bool v) => _statusOpen = v"
+                            Placeholder="Status"
+                            AllLabel="Status"
+                            SelectedValue="@Filter.Status"
+                            SelectedLabel="@GetStatusDisplayLabel(Filter.Status)"
+                            Options="@StatusOptions"
+                            OnSelectionChanged="OnStatusChanged"
+                            IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><polygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'/></svg>" />
+
+            <!-- Category -->
+            <FilterDropdown Open="@_categoryOpen"
+                            OpenChanged="(bool v) => _categoryOpen = v"
+                            Placeholder="Categories"
+                            AllLabel="Categories"
+                            SelectedValue="@Filter.CategoryId?.ToString()"
+                            SelectedLabel="@GetCategoryDisplayLabel(Filter.CategoryId)"
+                            Options="@CategoryOptions"
+                            OnSelectionChanged="OnCategoryChanged"
+                            Scrollable="true"
+                            IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><path d='M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z'/><line x1='7' y1='7' x2='7.01' y2='7'/></svg>" />
+
+            <!-- Priority -->
+            <FilterDropdown Open="@_priorityOpen"
+                            OpenChanged="(bool v) => _priorityOpen = v"
+                            Placeholder="Priorities"
+                            AllLabel="Priorities"
+                            SelectedValue="@Filter.Priority"
+                            SelectedLabel="@Filter.Priority"
+                            Options="@PriorityOptions"
+                            OnSelectionChanged="OnPriorityChanged"
+                            IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><circle cx='12' cy='12' r='10'/><polyline points='12 6 12 12 16 14'/></svg>" />
+
+            <!-- Action Buttons -->
+            <button class="ac-btn-primary" @onclick="ApplyFilter">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                Search
+            </button>
+            <button class="ac-btn-secondary" @onclick="ClearFilters">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+                Clear
+            </button>
+        </div>
+    </div>
+
+    @if (IsLoading)
+    {
+        <div class="ac-table-card">
+            @for (int i = 0; i < 8; i++)
+            {
+                <div class="ac-skeleton"></div>
+            }
+        </div>
+    }
+    else if (!Result.Items.Any())
+    {
+        <div class="ac-table-card">
+            <div class="ac-empty">
+                <div class="ac-empty-icon">📋</div>
+                <h3>No complaints found</h3>
+                <p>No complaints have been submitted yet.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="ac-table-card">
+            <table class="ac-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Title</th>
+                        <th>Citizen</th>
+                        <th>Category</th>
+                        <th>Status</th>
+                        <th>Priority</th>
+                        <th>SLA</th>
+                        <th>Submitted</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in SortedItems)
+                    {
+                        <tr>
+                            <td>
+                                @if (c.Status.ToString() == "Reopened")
+                                {
+                                    <span class="ac-urgency-badge">⚠ Urgent</span>
+                                }
+                                <a href="/admin/complaints/@c.Id" class="ac-complaint-num">@c.ComplaintNumber</a>
+                            </td>
+                            <td><span class="ac-title-cell" title="@c.Title">@c.Title</span></td>
+                            <td style="font-size:.8rem;color:#64748B;">@c.CitizenName</td>
+                            <td>
+                                <span class="ac-cat-chip" style="@GetCategoryStyle(c.CategoryColor)">
+                                    @c.CategoryName
+                                </span>
+                            </td>
+                            <td>
+                                @{
+                                    var sClass = c.Status.ToString().ToLowerInvariant() switch
+                                    {
+                                        "underreview" => "underreview",
+                                        "inprogress" => "inprogress",
+                                        _ => c.Status.ToString().ToLowerInvariant()
+                                    };
+                                }
+                                <span class="ac-status-badge ac-status-@sClass">
+                                    <span class="ac-status-dot"></span>
+                                    @GetStatusLabel(c.Status.ToString())
+                                </span>
+                            </td>
+                            <td>
+                                <span class="ac-priority-chip ac-priority-@c.Priority.ToString().ToLowerInvariant()">
+                                    @GetPriorityLabel(c.Priority)
+                                </span>
+                            </td>
+                            <td class="ac-sla-cell">
+                                <SlaProgressBar SlaDeadline="@c.SlaDeadline" CreatedAt="@c.CreatedAt" IsBreached="@c.IsSlaBreached" />
+                            </td>
+                            <td><span class="ac-date-cell">@c.CreatedAt.ToString("MMM dd, yyyy")</span></td>
+                            <td>
+                                <a href="/admin/complaints/@c.Id" class="ac-view-btn">
+                                    View <i class="bi bi-arrow-right"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            @if (Result.TotalPages > 1)
+            {
+                <div class="ac-pagination">
+                    <span class="ac-page-info">
+                        Showing @((CurrentPage - 1) * Result.PageSize + 1)–@(Math.Min(CurrentPage * Result.PageSize, Result.TotalCount)) of @Result.TotalCount
+                    </span>
+                    <div class="ac-page-controls">
+                        <button class="ac-page-btn" @onclick="() => ChangePage(1)" disabled="@(CurrentPage <= 1)"><i class="bi bi-chevron-double-left"></i></button>
+                        <button class="ac-page-btn" @onclick="() => ChangePage(CurrentPage - 1)" disabled="@(CurrentPage <= 1)"><i class="bi bi-chevron-left"></i></button>
+
+                        @for (int p = GetPaginationStart(); p <= GetPaginationEnd(); p++)
+                        {
+                            var pg = p;
+                            <button class="ac-page-btn @(CurrentPage == pg ? "active" : "")" @onclick="() => ChangePage(pg)">@pg</button>
+                        }
+
+                        <button class="ac-page-btn" @onclick="() => ChangePage(CurrentPage + 1)" disabled="@(CurrentPage >= Result.TotalPages)"><i class="bi bi-chevron-right"></i></button>
+                        <button class="ac-page-btn" @onclick="() => ChangePage(Result.TotalPages)" disabled="@(CurrentPage >= Result.TotalPages)"><i class="bi bi-chevron-double-right"></i></button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private PagedResult<ComplaintDto> Result = new();
+    private List<CategoryDto> Categories = new();
+    private ComplaintFilterDto Filter = new() { PageSize = 15 };
+    private int CurrentPage = 1;
+    private bool IsLoading = true;
+    private IEnumerable<ComplaintDto> SortedItems =>
+        (Result.Items ?? Enumerable.Empty<ComplaintDto>()).OrderByDescending(c => c.Status.ToString() == "Reopened" ? 1 : 0);
+    private bool _statusOpen;
+    private bool _categoryOpen;
+    private bool _priorityOpen;
+
+    private List<CivicPulse.Core.DTOs.DropdownOption> StatusOptions = new()
+    {
+        new() { Value = "Pending",     Label = "Pending",      Color = "#D97706" },
+        new() { Value = "UnderReview", Label = "Under Review", Color = "#3B82F6" },
+        new() { Value = "InProgress",  Label = "In Progress",  Color = "#2563EB" },
+        new() { Value = "Resolved",    Label = "Resolved",     Color = "#16A34A" },
+        new() { Value = "Closed",      Label = "Closed",       Color = "#9CA3AF" },
+        new() { Value = "Rejected",    Label = "Rejected",     Color = "#DC2626" },
+        new() { Value = "Reopened",    Label = "Reopened",     Color = "#7C3AED" },
+    };
+
+    private List<CivicPulse.Core.DTOs.DropdownOption> PriorityOptions = new()
+    {
+        new() { Value = "Critical", Label = "Critical", Color = "#DC2626" },
+        new() { Value = "High",     Label = "High",     Color = "#EA580C" },
+        new() { Value = "Medium",   Label = "Medium",   Color = "#D97706" },
+        new() { Value = "Low",      Label = "Low",      Color = "#16A34A" },
+    };
+
+    private List<CivicPulse.Core.DTOs.DropdownOption> CategoryOptions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        Categories = await CategoryService.GetActiveAsync();
+        CategoryOptions = Categories.Select(c => new CivicPulse.Core.DTOs.DropdownOption
+        {
+            Value = c.Id.ToString(),
+            Label = c.Name,
+            Color = GetCategoryColor(c.Name)
+        }).ToList();
+        Filter.Status = null;
+        Filter.CategoryId = null;
+        Filter.Priority = null;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        IsLoading = true;
+        if (string.IsNullOrEmpty(Filter.Status)) Filter.Status = null;
+        if (string.IsNullOrEmpty(Filter.Priority)) Filter.Priority = null;
+        Filter.Page = CurrentPage;
+        Result = await ComplaintService.GetAllAsync(Filter);
+        IsLoading = false;
+    }
+
+    private async Task ApplyFilter() { CurrentPage = 1; await LoadData(); }
+
+    private async Task OnStatusChanged(string? value)
+    {
+        Filter.Status = value;
+        await ApplyFilter();
+    }
+
+    private async Task OnCategoryChanged(string? value)
+    {
+        Filter.CategoryId = string.IsNullOrEmpty(value) ? null : int.Parse(value);
+        await ApplyFilter();
+    }
+
+    private async Task OnPriorityChanged(string? value)
+    {
+        Filter.Priority = value;
+        await ApplyFilter();
+    }
+
+    private async Task ClearFilters()
+    {
+        Filter.SearchTerm = string.Empty;
+        Filter.Status = null;
+        Filter.CategoryId = null;
+        Filter.Priority = null;
+        CurrentPage = 1;
+        await LoadData();
+    }
+
+    private async Task ChangePage(int p) { CurrentPage = p; await LoadData(); }
+
+    private async void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplyFilter();
+    }
+
+    private string GetStatusDisplayLabel(string? status) => status switch
+    {
+        "Pending"     => "Pending",
+        "UnderReview" => "Under Review",
+        "InProgress"  => "In Progress",
+        "Resolved"    => "Resolved",
+        "Closed"      => "Closed",
+        "Rejected"    => "Rejected",
+        "Reopened"    => "Reopened",
+        _ => ""
+    };
+
+    private string GetCategoryDisplayLabel(int? id) =>
+        id == null ? "" : Categories.FirstOrDefault(c => c.Id == id)?.Name ?? "";
+
+    private string GetStatusLabel(string status) => status switch
+    {
+        "Pending"     => "Pending",
+        "UnderReview" => "Under Review",
+        "InProgress"  => "In Progress",
+        "Resolved"    => "Resolved",
+        "Closed"      => "Closed",
+        "Rejected"    => "Rejected",
+        "Reopened"    => "Reopened",
+        _             => "All Status"
+    };
+
+    private string GetCategoryName(int id) =>
+        Categories.FirstOrDefault(c => c.Id == id)?.Name ?? "Category";
+
+    private string GetCategoryStyle(string color) =>
+        $"background:{color}18; color:{color}";
+
+    private string GetPriorityLabel(PriorityLevel priority) => priority switch
+    {
+        PriorityLevel.Critical => "Critical",
+        PriorityLevel.High => "High",
+        PriorityLevel.Medium => "Medium",
+        PriorityLevel.Low => "Low",
+        _ => priority.ToString()
+    };
+
+    private string GetCategoryColor(string name) => name?.ToLower() switch
+    {
+        var s when s?.Contains("road") == true     => "#EA580C",
+        var s when s?.Contains("water") == true    => "#2563EB",
+        var s when s?.Contains("electric") == true => "#D97706",
+        var s when s?.Contains("waste") == true || s?.Contains("sanit") == true => "#16A34A",
+        var s when s?.Contains("light") == true    => "#7C3AED",
+        var s when s?.Contains("sewer") == true    => "#0891B2",
+        var s when s?.Contains("park") == true || s?.Contains("green") == true  => "#15803D",
+        var s when s?.Contains("build") == true || s?.Contains("hazard") == true => "#DC2626",
+        var s when s?.Contains("noise") == true    => "#9333EA",
+        var s when s?.Contains("encroach") == true => "#B45309",
+        _ => "#6B7280"
+    };
+
+    private int GetPaginationStart() => Math.Max(1, CurrentPage - 2);
+    private int GetPaginationEnd() => Math.Min(Result.TotalPages, CurrentPage + 2);
+
+    private async Task ExportCsv()
+    {
+        try
+        {
+            var exportFilter = new ComplaintFilterDto
+            {
+                SearchTerm = Filter.SearchTerm,
+                Status = Filter.Status,
+                CategoryId = Filter.CategoryId,
+                Priority = Filter.Priority,
+                Page = 1,
+                PageSize = int.MaxValue
+            };
+            var csvBytes = await ComplaintService.ExportComplaintsToCsvAsync(exportFilter);
+            var base64 = Convert.ToBase64String(csvBytes);
+            await JS.InvokeVoidAsync("CivicInterop.downloadFile",
+                $"complaints-export-{DateTime.Now:yyyyMMdd}.csv", base64, "text/csv");
+        }
+        catch { }
+    }
+}

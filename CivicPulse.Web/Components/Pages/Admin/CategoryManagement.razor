@@ -1,0 +1,338 @@
+@page "/admin/categories"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@inject ICategoryService CategoryService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="cat-page">
+
+    <!-- PAGE HEADER -->
+    <div class="cat-header">
+        <div>
+            <h1 class="cat-page-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24" style="color:#1B3A6B;flex-shrink:0">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+                    <line x1="7" y1="7" x2="7.01" y2="7"/>
+                </svg>
+                Categories
+            </h1>
+            <p class="cat-page-sub">Manage complaint categories, SLA rules and priorities</p>
+        </div>
+        <button class="cat-add-btn" @onclick="OpenAddModal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add Category
+        </button>
+    </div>
+
+    <!-- STATS STRIP -->
+    <div class="cat-stats-strip">
+        <div class="cat-stat">
+            <span class="cat-stat-num">@categories.Count</span>
+            <span class="cat-stat-label">Total</span>
+        </div>
+        <div class="cat-stat">
+            <span class="cat-stat-num" style="color:#16A34A">@categories.Count(c => c.IsActive)</span>
+            <span class="cat-stat-label">Active</span>
+        </div>
+        <div class="cat-stat">
+            <span class="cat-stat-num" style="color:#DC2626">@categories.Count(c => c.DefaultPriority == "Critical")</span>
+            <span class="cat-stat-label">Critical Priority</span>
+        </div>
+        <div class="cat-stat">
+            <span class="cat-stat-num" style="color:#D97706">@(categories.Any() ? categories.Min(c => c.DefaultSlaDays) + "d" : "—")</span>
+            <span class="cat-stat-label">Min SLA</span>
+        </div>
+    </div>
+
+    <!-- CATEGORY GRID -->
+    @if (IsLoading)
+    {
+        <div class="cp-grid cp-grid-4">
+            @for (int i = 0; i < 8; i++) { <div class="cp-skeleton" style="height:140px;"></div> }
+        </div>
+    }
+    else if (!categories.Any())
+    {
+        <div class="cat-empty">
+            <h3>No categories found</h3>
+            <p>Add your first category to get started</p>
+        </div>
+    }
+    else
+    {
+        <div class="cat-grid">
+            @foreach (var cat in categories)
+            {
+                <div class="cat-card @(cat.IsActive ? "" : "cat-card-inactive")"
+                     style="--cat-color: @GetCategoryColor(cat.Name)">
+
+                    <!-- Top accent bar -->
+                    <div class="cat-card-bar"></div>
+
+                    <!-- Card body -->
+                    <div class="cat-card-body">
+                        <div class="cat-card-top">
+                            <div class="cat-icon-wrap">
+                                @GetCategoryIconSvg(cat.Name)
+                            </div>
+                            <span class="cat-active-badge @(cat.IsActive ? "badge-active" : "badge-inactive")">
+                                @(cat.IsActive ? "Active" : "Inactive")
+                            </span>
+                        </div>
+
+                        <div class="cat-card-info">
+                            <h3 class="cat-name">@cat.Name</h3>
+                        </div>
+
+                        <div class="cat-meta-row">
+                            <div class="cat-meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                                <span>SLA: <strong>@cat.DefaultSlaDays days</strong></span>
+                            </div>
+                            <span class="cat-priority-chip cat-p-@(cat.DefaultPriority?.ToLower() ?? "medium")">
+                                @GetPriorityIcon(cat.DefaultPriority) @cat.DefaultPriority
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Card footer actions -->
+                    <div class="cat-card-footer">
+                        <button class="cat-action-btn cat-edit-btn" @onclick="() => OpenEditModal(cat)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                            Edit
+                        </button>
+                        <button class="cat-action-btn @(cat.IsActive ? "cat-deactivate-btn" : "cat-activate-btn")"
+                                @onclick="() => ToggleActive(cat)">
+                            @if (cat.IsActive)
+                            {
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                                </svg>
+                                <span>Deactivate</span>
+                            }
+                            else
+                            {
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                                <span>Activate</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (ShowModal)
+{
+    <div class="cp-modal-overlay" @onclick="() => ShowModal = false">
+        <div class="cp-modal" @onclick:stopPropagation>
+            <div class="cp-modal-header">
+                <span>@(EditItem != null && EditItem.Id > 0 ? "Edit" : "Add") Category</span>
+                <button class="cp-modal-close" @onclick="() => ShowModal = false">&times;</button>
+            </div>
+            <div class="cp-grid cp-grid-2 cp-gap">
+                <div class="cp-form-group">
+                    <label class="cp-form-label">Name</label>
+                    <input class="cp-input" @bind="EditItem!.Name" />
+                </div>
+                <div class="cp-form-group">
+                    <label class="cp-form-label">Icon</label>
+                    <input class="cp-input" @bind="EditItem.IconName" placeholder="bi-road" />
+                </div>
+                <div class="cp-form-group">
+                    <label class="cp-form-label">Color</label>
+                    <input class="cp-input" @bind="EditItem.ColorHex" type="color" />
+                </div>
+                <div class="cp-form-group">
+                    <label class="cp-form-label">SLA Days</label>
+                    <input class="cp-input" @bind="EditItem.DefaultSlaDays" type="number" min="1" />
+                </div>
+                <div class="cp-form-group">
+                    <label class="cp-form-label">Default Priority</label>
+                    <select class="cp-select" @bind="EditItem.DefaultPriority">
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                        <option value="Critical">Critical</option>
+                    </select>
+                </div>
+            </div>
+            <div class="cp-form-group">
+                <label class="cp-form-label">Keywords (comma-separated)</label>
+                <div style="display:flex;flex-wrap:wrap;gap:4px;padding:8px;border:1px solid var(--cp-border);border-radius:var(--cp-radius-sm);min-height:44px;">
+                    @if (KeywordsList.Count > 0)
+                    {
+                        @foreach (var kw in KeywordsList)
+                        {
+                            <span class="cp-badge cp-badge-inprogress" style="cursor:pointer;"
+                                  @onclick="() => RemoveKeyword(kw)">
+                                @kw ×
+                            </span>
+                        }
+                    }
+                    <input class="cp-input" @bind="NewKeyword" @onkeypress="HandleKeywordKey"
+                           style="border:none;padding:4px;flex:1;min-width:80px;" placeholder="Add keyword..." />
+                </div>
+            </div>
+            <div class="cp-form-group">
+                <label class="cp-form-label">Description</label>
+                <textarea class="cp-textarea" @bind="EditItem.Description"></textarea>
+            </div>
+            <div class="cp-form-group">
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
+                    <input type="checkbox" @bind="EditItem.IsActive" />
+                    <span>Active</span>
+                </label>
+            </div>
+            <div class="cp-modal-footer">
+                <button class="cp-btn cp-btn-secondary" @onclick="() => ShowModal = false">Cancel</button>
+                <button class="cp-btn cp-btn-primary" @onclick="SaveCategory">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<CategoryDto> categories = new();
+    private bool IsLoading = true;
+    private bool ShowModal;
+    private CategoryDto EditItem = new();
+    private List<string> KeywordsList = new();
+    private string NewKeyword = "";
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        categories = await CategoryService.GetAllAsync();
+        IsLoading = false;
+    }
+
+    private void OpenAddModal()
+    {
+        ShowEditModal(null);
+    }
+
+    private void OpenEditModal(CategoryDto cat)
+    {
+        ShowEditModal(cat);
+    }
+
+    private void ShowEditModal(CategoryDto? c)
+    {
+        if (c != null)
+        {
+            EditItem = new CategoryDto
+            {
+                Id = c.Id, Name = c.Name, Description = c.Description,
+                IconName = c.IconName, ColorHex = c.ColorHex, DefaultSlaDays = c.DefaultSlaDays,
+                DefaultPriority = c.DefaultPriority, IsActive = c.IsActive, Keywords = c.Keywords
+            };
+            KeywordsList = c.Keywords.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
+        }
+        else
+        {
+            EditItem = new CategoryDto { IsActive = true, DefaultSlaDays = 5, DefaultPriority = "Medium", ColorHex = "#2196F3" };
+            KeywordsList = new();
+        }
+        ShowModal = true;
+    }
+
+    private async void HandleKeywordKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(NewKeyword))
+        {
+            KeywordsList.Add(NewKeyword.Trim());
+            EditItem.Keywords = string.Join(",", KeywordsList);
+            NewKeyword = "";
+        }
+    }
+
+    private void RemoveKeyword(string kw)
+    {
+        KeywordsList.Remove(kw);
+        EditItem.Keywords = string.Join(",", KeywordsList);
+    }
+
+    private async Task SaveCategory()
+    {
+        EditItem.Keywords = string.Join(",", KeywordsList);
+        if (EditItem.Id > 0)
+            await CategoryService.UpdateAsync(EditItem);
+        else
+            await CategoryService.CreateAsync(EditItem);
+
+        ShowModal = false;
+        categories = await CategoryService.GetAllAsync();
+    }
+
+    private async Task ToggleActive(CategoryDto cat)
+    {
+        cat.IsActive = !cat.IsActive;
+        await CategoryService.UpdateAsync(cat);
+        categories = await CategoryService.GetAllAsync();
+    }
+
+    private string GetCategoryColor(string name) => name?.ToLower() switch
+    {
+        var s when s?.Contains("road") == true => "#EA580C",
+        var s when s?.Contains("water") == true => "#2563EB",
+        var s when s?.Contains("electric") == true => "#D97706",
+        var s when s?.Contains("waste") == true || s?.Contains("sanit") == true => "#16A34A",
+        var s when s?.Contains("light") == true => "#7C3AED",
+        var s when s?.Contains("sewer") == true => "#0891B2",
+        var s when s?.Contains("park") == true || s?.Contains("green") == true => "#15803D",
+        var s when s?.Contains("build") == true || s?.Contains("hazard") == true => "#DC2626",
+        var s when s?.Contains("noise") == true => "#9333EA",
+        var s when s?.Contains("encroach") == true => "#B45309",
+        _ => "#6B7280"
+    };
+
+    private string GetPriorityIcon(string? priority) => priority?.ToLower() switch
+    {
+        "critical" => "🔴",
+        "high" => "🟠",
+        "medium" => "🟡",
+        "low" => "🟢",
+        _ => "⚪"
+    };
+
+    private MarkupString GetCategoryIconSvg(string? name)
+    {
+        var svg = name?.ToLower() switch
+        {
+            var s when s?.Contains("road") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><polygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/></svg>",
+            var s when s?.Contains("water") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><path d='M12 2C6 9 4 13 4 16a8 8 0 0016 0c0-3-2-7-8-14z'/></svg>",
+            var s when s?.Contains("electric") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><polygon points='13 2 3 14 12 14 11 22 21 10 12 10 13 2'/></svg>",
+            var s when s?.Contains("waste") == true || s?.Contains("sanit") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><polyline points='3 6 5 6 21 6'/><path d='M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6'/><path d='M10 11v6M14 11v6'/><path d='M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2'/></svg>",
+            var s when s?.Contains("light") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><line x1='12' y1='2' x2='12' y2='6'/><line x1='12' y1='18' x2='12' y2='22'/><line x1='4.93' y1='4.93' x2='7.76' y2='7.76'/><line x1='16.24' y1='16.24' x2='19.07' y2='19.07'/><line x1='2' y1='12' x2='6' y2='12'/><line x1='18' y1='12' x2='22' y2='12'/><circle cx='12' cy='12' r='5'/></svg>",
+            var s when s?.Contains("sewer") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><path d='M12 22V12m0 0l-4 4m4-4l4 4'/><circle cx='12' cy='8' r='4'/><path d='M3 22h18'/></svg>",
+            var s when s?.Contains("park") == true || s?.Contains("green") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><path d='M17 8C8 10 5.9 16.17 3.82 22h14.86L17 8zM7 22a5 5 0 003-9M17 8a5 5 0 10-8 0'/></svg>",
+            var s when s?.Contains("build") == true || s?.Contains("hazard") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><path d='M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z'/><line x1='12' y1='9' x2='12' y2='13'/><line x1='12' y1='17' x2='12.01' y2='17'/></svg>",
+            var s when s?.Contains("noise") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5'/><path d='M15.54 8.46a5 5 0 010 7.07'/><path d='M19.07 4.93a10 10 0 010 14.14'/></svg>",
+            var s when s?.Contains("encroach") == true =>
+                "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><circle cx='12' cy='12' r='10'/><line x1='4.93' y1='4.93' x2='19.07' y2='19.07'/></svg>",
+            _ => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='22' height='22'><circle cx='12' cy='12' r='10'/><line x1='12' y1='8' x2='12' y2='12'/><line x1='12' y1='16' x2='12.01' y2='16'/></svg>"
+        };
+        return new MarkupString(svg);
+    }
+}

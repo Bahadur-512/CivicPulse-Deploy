@@ -1,0 +1,124 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div id="@ElementId" class="cp-map-container" style="height: 400px;"></div>
+
+<div style="margin-top:8px;">
+    @if (IsLocating)
+    {
+        <div class="cp-alert cp-alert-info"><i class="bi bi-crosshair"></i> Detecting your location...</div>
+    }
+    @if (!string.IsNullOrEmpty(LocationError))
+    {
+        <div class="cp-alert cp-alert-warning"><i class="bi bi-exclamation-triangle"></i> @LocationError</div>
+    }
+    @if (!string.IsNullOrEmpty(Address))
+    {
+        <div class="cp-alert cp-alert-info" style="margin-top: 8px;">
+            <i class="bi bi-geo-alt"></i> @Address
+        </div>
+    }
+</div>
+
+<div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+    <input class="cp-input" @bind="Address" placeholder="Type address manually..." style="flex:1;min-width:160px;" />
+    <button class="cp-btn cp-btn-secondary" @onclick="UseMyLocation" disabled="@IsLocating">
+        <i class="bi bi-crosshair"></i> Use My Location
+    </button>
+</div>
+
+@code {
+    [Parameter] public string ElementId { get; set; } = "map-picker-container";
+    [Parameter] public double DefaultLat { get; set; } = 33.6844;
+    [Parameter] public double DefaultLng { get; set; } = 73.0479;
+    [Parameter] public EventCallback<(double Lat, double Lng, string Address)> OnLocationPicked { get; set; }
+    [Parameter] public bool ViewOnly { get; set; }
+    [Parameter] public bool AutoDetect { get; set; }
+
+    private string Address = "";
+    private double Lat;
+    private double Lng;
+    private bool IsLocating;
+    private string LocationError = "";
+    private DotNetObjectReference<MapPicker>? _dotNetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            if (ViewOnly)
+            {
+                await JS.InvokeVoidAsync("CivicMap.initViewMap", ElementId, DefaultLat, DefaultLng, "");
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("CivicMap.initPickerMap", ElementId, DefaultLat, DefaultLng, _dotNetRef);
+            }
+
+            if (AutoDetect)
+            {
+                await Task.Delay(300);
+                await UseMyLocation();
+            }
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnLocationSelected(double lat, double lng)
+    {
+        Lat = lat;
+        Lng = lng;
+        LocationError = "";
+        await OnLocationPicked.InvokeAsync((lat, lng, Address));
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnAddressResolved(string address)
+    {
+        Address = address;
+        await OnLocationPicked.InvokeAsync((Lat, Lng, Address));
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnGeolocationReceived(double lat, double lng)
+    {
+        IsLocating = false;
+        LocationError = "";
+        DefaultLat = lat;
+        DefaultLng = lng;
+        await JS.InvokeVoidAsync("CivicMap.destroyMap", ElementId);
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("CivicMap.initPickerMap", ElementId, lat, lng, _dotNetRef);
+        await JS.InvokeVoidAsync("CivicMap.placeMarker", ElementId, lat, lng);
+        Lat = lat;
+        Lng = lng;
+        await OnLocationPicked.InvokeAsync((lat, lng, Address));
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnGeolocationError(string message)
+    {
+        IsLocating = false;
+        LocationError = message;
+        StateHasChanged();
+    }
+
+    private async Task UseMyLocation()
+    {
+        IsLocating = true;
+        LocationError = "";
+        StateHasChanged();
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("CivicMap.getCurrentPosition", _dotNetRef);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _dotNetRef?.Dispose();
+        await JS.InvokeVoidAsync("CivicMap.destroyMap", ElementId);
+    }
+}

@@ -1,0 +1,310 @@
+@page "/admin/sla"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@inject IComplaintService ComplaintService
+@inject ISlaService SlaService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="sla-page">
+
+    <!-- PAGE HEADER -->
+    <div class="sla-page-header">
+        <div>
+            <h1 class="sla-page-title">
+                <i class="bi bi-clock-history"></i>
+                SLA Tracking
+            </h1>
+            <p class="sla-page-sub">Monitor complaint deadlines and SLA compliance</p>
+        </div>
+        <!-- SLA Summary Pills -->
+        <div class="sla-summary-pills">
+            <div class="sla-pill sla-pill-breached">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <span class="sla-pill-count">@SlaBreached.Count</span>
+                <span class="sla-pill-label">Breached</span>
+            </div>
+            <div class="sla-pill sla-pill-approaching">
+                <i class="bi bi-clock-fill"></i>
+                <span class="sla-pill-count">@SlaApproaching.Count</span>
+                <span class="sla-pill-label">Approaching</span>
+            </div>
+            <div class="sla-pill sla-pill-ontrack">
+                <i class="bi bi-check-circle-fill"></i>
+                <span class="sla-pill-count">@OnTrack.Count</span>
+                <span class="sla-pill-label">On Track</span>
+            </div>
+        </div>
+    </div>
+
+    @if (IsLoading)
+    {
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;">
+            @for (int i = 0; i < 3; i++)
+            {
+                <div style="background:#F8FAFC;border-radius:16px;border:1.5px solid #E2E8F0;padding:16px;">
+                    @for (int j = 0; j < 4; j++)
+                    {
+                        <div class="skeleton" style="height:120px;margin-bottom:12px;border-radius:12px;"></div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <!-- THREE COLUMN KANBAN -->
+        <div class="sla-kanban">
+
+            <!-- BREACHED -->
+            <div class="sla-column sla-col-breached">
+                <div class="sla-col-header">
+                    <div class="sla-col-title">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        SLA Breached
+                    </div>
+                    <span class="sla-col-badge breached-badge">@SlaBreached.Count</span>
+                </div>
+
+                @if (!SlaBreached.Any())
+                {
+                    <div class="sla-col-empty">
+                        <i class="bi bi-check-circle-fill" style="color:#16A34A;font-size:2rem"></i>
+                        <p>No breached complaints!</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="sla-card-list">
+                        @foreach (var c in SlaBreached)
+                        {
+                            <div class="sla-card sla-card-breached">
+                                <div class="sla-card-top">
+                                    <span class="sla-card-num">@c.ComplaintNumber</span>
+                                    <span class="sla-overdue-badge">
+                                        <i class="bi bi-alarm-fill"></i> OVERDUE
+                                    </span>
+                                </div>
+                                <p class="sla-card-title" title="@c.Title">
+                                    @TruncateTitle(c.Title, 45)
+                                </p>
+                                <div class="sla-card-meta">
+                                    <span class="sla-status-chip sla-s-@GetStatusClass(c.Status)">
+                                        @GetStatusLabel(c.Status)
+                                    </span>
+                                    <span class="sla-priority-chip sla-p-@c.Priority.ToString().ToLower()">
+                                        @GetPriorityIcon(c.Priority) @c.Priority.ToString()
+                                    </span>
+                                </div>
+                                <div class="sla-progress-row">
+                                    <div class="sla-progress-track">
+                                        <div class="sla-progress-fill breached-fill" style="width:100%"></div>
+                                    </div>
+                                    <span class="sla-progress-label breached-text">100%</span>
+                                </div>
+                                <a href="/admin/complaints/@c.Id" class="sla-view-btn">
+                                    View Details <i class="bi bi-arrow-right"></i>
+                                </a>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- APPROACHING -->
+            <div class="sla-column sla-col-approaching">
+                <div class="sla-col-header">
+                    <div class="sla-col-title">
+                        <i class="bi bi-clock-fill"></i>
+                        Approaching Deadline
+                    </div>
+                    <span class="sla-col-badge approaching-badge">@SlaApproaching.Count</span>
+                </div>
+
+                @if (!SlaApproaching.Any())
+                {
+                    <div class="sla-col-empty">
+                        <i class="bi bi-emoji-smile" style="color:#D97706;font-size:2rem"></i>
+                        <p>No deadlines approaching</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="sla-card-list">
+                        @foreach (var c in SlaApproaching)
+                        {
+                            var elapsed = GetElapsedPercent(c);
+                            <div class="sla-card sla-card-approaching">
+                                <div class="sla-card-top">
+                                    <span class="sla-card-num">@c.ComplaintNumber</span>
+                                    <span class="sla-remaining-text approaching-text">
+                                        <i class="bi bi-hourglass-split"></i>
+                                        @GetRemainingTime(c)
+                                    </span>
+                                </div>
+                                <p class="sla-card-title" title="@c.Title">
+                                    @TruncateTitle(c.Title, 45)
+                                </p>
+                                <div class="sla-card-meta">
+                                    <span class="sla-status-chip sla-s-@GetStatusClass(c.Status)">
+                                        @GetStatusLabel(c.Status)
+                                    </span>
+                                    <span class="sla-priority-chip sla-p-@c.Priority.ToString().ToLower()">
+                                        @GetPriorityIcon(c.Priority) @c.Priority.ToString()
+                                    </span>
+                                </div>
+                                <div class="sla-progress-row">
+                                    <div class="sla-progress-track">
+                                        <div class="sla-progress-fill approaching-fill"
+                                             style="width:@(Math.Min(elapsed, 100))%"></div>
+                                    </div>
+                                    <span class="sla-progress-label approaching-text">@(elapsed.ToString("F1"))%</span>
+                                </div>
+                                <a href="/admin/complaints/@c.Id" class="sla-view-btn">
+                                    View Details <i class="bi bi-arrow-right"></i>
+                                </a>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- ON TRACK -->
+            <div class="sla-column sla-col-ontrack">
+                <div class="sla-col-header">
+                    <div class="sla-col-title">
+                        <i class="bi bi-check-circle-fill"></i>
+                        On Track
+                    </div>
+                    <span class="sla-col-badge ontrack-badge">@OnTrack.Count</span>
+                </div>
+
+                @if (!OnTrack.Any())
+                {
+                    <div class="sla-col-empty">
+                        <i class="bi bi-inbox" style="color:#9CA3AF;font-size:2rem"></i>
+                        <p>No complaints on track</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="sla-card-list">
+                        @foreach (var c in OnTrack)
+                        {
+                            var elapsed = GetElapsedPercent(c);
+                            <div class="sla-card sla-card-ontrack">
+                                <div class="sla-card-top">
+                                    <span class="sla-card-num">@c.ComplaintNumber</span>
+                                    <span class="sla-remaining-text ontrack-text">
+                                        <i class="bi bi-check2"></i>
+                                        @GetRemainingTime(c)
+                                    </span>
+                                </div>
+                                <p class="sla-card-title" title="@c.Title">
+                                    @TruncateTitle(c.Title, 45)
+                                </p>
+                                <div class="sla-card-meta">
+                                    <span class="sla-status-chip sla-s-@GetStatusClass(c.Status)">
+                                        @GetStatusLabel(c.Status)
+                                    </span>
+                                    <span class="sla-priority-chip sla-p-@c.Priority.ToString().ToLower()">
+                                        @GetPriorityIcon(c.Priority) @c.Priority.ToString()
+                                    </span>
+                                </div>
+                                <div class="sla-progress-row">
+                                    <div class="sla-progress-track">
+                                        <div class="sla-progress-fill ontrack-fill"
+                                             style="width:@(Math.Min(elapsed, 100))%"></div>
+                                    </div>
+                                    <span class="sla-progress-label ontrack-text">@(elapsed.ToString("F1"))%</span>
+                                </div>
+                                <a href="/admin/complaints/@c.Id" class="sla-view-btn">
+                                    View Details <i class="bi bi-arrow-right"></i>
+                                </a>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+        </div>
+    }
+</div>
+
+@code {
+    private List<ComplaintDto> SlaBreached = new();
+    private List<ComplaintDto> SlaApproaching = new();
+    private List<ComplaintDto> OnTrack = new();
+    private bool IsLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        SlaBreached = await ComplaintService.GetSlaBreachedAsync();
+        SlaApproaching = await ComplaintService.GetSlaApproachingAsync(80);
+        var allFilter = new ComplaintFilterDto { PageSize = 100 };
+        var all = await ComplaintService.GetAllAsync(allFilter);
+        OnTrack = all.Items
+            .Where(c => !c.IsSlaBreached && c.Status != ComplaintStatus.Resolved && c.Status != ComplaintStatus.Closed)
+            .Except(SlaApproaching)
+            .Take(20)
+            .ToList();
+
+        IsLoading = false;
+    }
+
+    private string TruncateTitle(string title, int max) =>
+        string.IsNullOrEmpty(title) ? "" :
+        title.Length <= max ? title : title.Substring(0, max) + "...";
+
+    private double GetElapsedPercent(ComplaintDto c)
+    {
+        if (!c.SlaDeadline.HasValue) return 0;
+        var total = (c.SlaDeadline.Value - c.CreatedAt).TotalMinutes;
+        var elapsed = (DateTime.UtcNow - c.CreatedAt).TotalMinutes;
+        if (total <= 0) return 100;
+        return Math.Min(Math.Round((elapsed / total) * 100, 1), 100);
+    }
+
+    private string GetRemainingTime(ComplaintDto c)
+    {
+        if (!c.SlaDeadline.HasValue) return "N/A";
+        var remaining = c.SlaDeadline.Value - DateTime.UtcNow;
+        if (remaining.TotalSeconds <= 0) return "OVERDUE";
+        if (remaining.TotalDays >= 1) return $"{(int)remaining.TotalDays}d {remaining.Hours}h remaining";
+        if (remaining.TotalHours >= 1) return $"{(int)remaining.TotalHours}h {remaining.Minutes}m remaining";
+        return $"{(int)remaining.TotalMinutes}m remaining";
+    }
+
+    private string GetStatusClass(ComplaintStatus s) => s switch
+    {
+        ComplaintStatus.Pending => "pending",
+        ComplaintStatus.UnderReview => "review",
+        ComplaintStatus.InProgress => "inprogress",
+        ComplaintStatus.Resolved => "resolved",
+        ComplaintStatus.Closed => "closed",
+        ComplaintStatus.Rejected => "rejected",
+        _ => "pending"
+    };
+
+    private string GetStatusLabel(ComplaintStatus s) => s switch
+    {
+        ComplaintStatus.Pending => "Pending",
+        ComplaintStatus.UnderReview => "Under Review",
+        ComplaintStatus.InProgress => "In Progress",
+        ComplaintStatus.Resolved => "Resolved",
+        ComplaintStatus.Closed => "Closed",
+        ComplaintStatus.Rejected => "Rejected",
+        _ => s.ToString()
+    };
+
+    private string GetPriorityIcon(PriorityLevel p) => p switch
+    {
+        PriorityLevel.Critical => "🔴",
+        PriorityLevel.High => "🟠",
+        PriorityLevel.Medium => "🟡",
+        PriorityLevel.Low => "🟢",
+        _ => "⚪"
+    };
+}

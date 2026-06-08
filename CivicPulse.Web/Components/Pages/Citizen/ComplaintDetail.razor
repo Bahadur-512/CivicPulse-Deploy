@@ -1,0 +1,455 @@
+@page "/citizen/complaints/{Id:int}"
+@layout CitizenLayout
+@attribute [Authorize(Policy = "CitizenOnly")]
+@inject IComplaintService ComplaintService
+@inject IFeedbackService FeedbackService
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<div class="cdet-page">
+
+    @if (isLoading)
+    {
+        <div class="cdet-loading">
+            <div class="cdet-loading-spinner"></div>
+            <span>Loading complaint details...</span>
+        </div>
+    }
+    else if (complaint == null)
+    {
+        <div class="cdet-not-found">
+            <svg viewBox="0 0 80 80" fill="none" width="80" height="80">
+                <circle cx="40" cy="40" r="38" fill="#FEF2F2" stroke="#FECACA" stroke-width="2"/>
+                <path d="M25 25l30 30M55 25L25 55" stroke="#EF4444" stroke-width="3" stroke-linecap="round"/>
+            </svg>
+            <h3>Complaint not found</h3>
+            <p>This complaint may have been removed or you don't have access.</p>
+            <a href="/citizen/complaints" class="cdet-back-link">← Back to My Complaints</a>
+        </div>
+    }
+    else
+    {
+        <!-- BREADCRUMB + BACK -->
+        <div class="cdet-breadcrumb">
+            <a href="/citizen/complaints" class="cdet-back-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                Back to Complaints
+            </a>
+            <span class="cdet-breadcrumb-sep">›</span>
+            <span class="cdet-breadcrumb-current">@complaint.ComplaintNumber</span>
+        </div>
+
+        <!-- PAGE HEADER -->
+        <div class="cdet-header">
+            <div class="cdet-header-left">
+                <div class="cdet-complaint-num">@complaint.ComplaintNumber</div>
+                <div class="cdet-submitted">
+                    Submitted on @complaint.CreatedAt.ToString("MMMM dd, yyyy") at @complaint.CreatedAt.ToString("hh:mm tt")
+                </div>
+            </div>
+            <div class="cdet-header-badges">
+                <span class="cdet-status-badge cdet-s-@GetStatusClass(complaint.Status)">
+                    <span class="cdet-status-dot"></span>
+                    @GetStatusLabel(complaint.Status)
+                </span>
+                <span class="cdet-priority-badge cdet-p-@complaint.Priority.ToString().ToLower()">
+                    @GetPriorityIcon(complaint.Priority) @complaint.Priority.ToString()
+                </span>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT + SIDEBAR -->
+        <div class="cdet-layout">
+
+            <!-- LEFT: Main content -->
+            <div class="cdet-main">
+
+                <!-- Complaint Info Card -->
+                <div class="cdet-card">
+                    <div class="cdet-card-header">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                        Complaint Details
+                    </div>
+                    <div class="cdet-card-body">
+                        <h2 class="cdet-title">@complaint.Title</h2>
+                        <p class="cdet-description">@complaint.Description</p>
+                    </div>
+                </div>
+
+                <!-- Attachments Card -->
+                @if (complaint.Attachments?.Any() == true)
+                {
+                    <div class="cdet-card">
+                        <div class="cdet-card-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                            </svg>
+                            Attachments
+                            <span class="cdet-count-pill">@complaint.Attachments.Count</span>
+                        </div>
+                        <div class="cdet-card-body">
+                            <div class="cdet-attachments-grid">
+                                @foreach (var att in complaint.Attachments)
+                                {
+                                    <div class="cdet-attachment-item">
+                                        @if (att.FileType?.StartsWith("image") == true)
+                                        {
+                                            <a href="/@att.FilePath" target="_blank" class="cdet-att-link">
+                                                <img src="/@att.FilePath" alt="@att.FileName"
+                                                     class="cdet-att-image"
+                                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                                                <div class="cdet-att-fallback" style="display:none;">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24" style="color:#94A3B8">
+                                                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                                                        <polyline points="21 15 16 10 5 21"/>
+                                                    </svg>
+                                                </div>
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <a href="/@att.FilePath" target="_blank" class="cdet-att-link cdet-att-file">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28" style="color:#DC2626">
+                                                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                                    <polyline points="14 2 14 8 20 8"/>
+                                                </svg>
+                                            </a>
+                                        }
+                                        <span class="cdet-att-name" title="@att.FileName">
+                                            @TruncateFileName(att.FileName, 16)
+                                        </span>
+                                        <span class="cdet-att-size">@FormatFileSize(att.FileSizeBytes)</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <!-- Map Card -->
+                @if (complaint.Latitude.HasValue && complaint.Longitude.HasValue)
+                {
+                    <div class="cdet-card">
+                        <div class="cdet-card-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+                                <circle cx="12" cy="10" r="3"/>
+                            </svg>
+                            Complaint Location
+                            @if (!string.IsNullOrEmpty(complaint.LocationDescription))
+                            {
+                                <span class="cdet-location-text">@complaint.LocationDescription</span>
+                            }
+                        </div>
+                        <div class="cdet-map-container" id="detail-map-@complaint.Id"></div>
+                    </div>
+                }
+
+                <!-- Status Timeline Card -->
+                @if (statusHistory?.Any() == true)
+                {
+                    <div class="cdet-card">
+                        <div class="cdet-card-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                            </svg>
+                            Complaint Status Timeline
+                        </div>
+                        <div class="cdet-card-body">
+                            <div class="cdet-timeline">
+                                @foreach (var history in statusHistory.OrderBy(h => h.CreatedAt))
+                                {
+                                    <div class="cdet-timeline-item">
+                                        <div class="cdet-timeline-dot cdet-s-@GetStatusClass(history.ToStatus)"></div>
+                                        <div class="cdet-timeline-line"></div>
+                                        <div class="cdet-timeline-content">
+                                            <div class="cdet-timeline-top">
+                                                <span class="cdet-tl-status cdet-s-@GetStatusClass(history.ToStatus)">
+                                                    @GetStatusLabel(history.ToStatus)
+                                                </span>
+                                                <span class="cdet-tl-date">
+                                                    @history.CreatedAt.ToString("MMM dd, yyyy · hh:mm tt")
+                                                </span>
+                                            </div>
+                                            <span class="cdet-tl-user">@(history.ChangedByName ?? "System")</span>
+                                            @if (!string.IsNullOrEmpty(history.Note))
+                                            {
+                                                <p class="cdet-tl-note">@history.Note</p>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <!-- Reopen Button -->
+                @if ((complaint.Status == ComplaintStatus.Resolved || complaint.Status == ComplaintStatus.Closed) && CanReopen)
+                {
+                    <div class="cdet-card cdet-reopen-card">
+                        <div class="cdet-card-body">
+                            <div class="cdet-reopen-row">
+                                <div>
+                                    <h4 class="cdet-reopen-title">Not satisfied with the resolution?</h4>
+                                    <p class="cdet-reopen-sub">You can reopen this complaint within 7 days of resolution.</p>
+                                </div>
+                                <button class="cdet-reopen-btn" @onclick="OpenReopenModal">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                        <polyline points="1 4 1 10 7 10"/>
+                                        <path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+                                    </svg>
+                                    Reopen Complaint
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+            </div>
+
+            <!-- RIGHT: Info Sidebar -->
+            <div class="cdet-sidebar">
+
+                <!-- Category + Priority -->
+                <div class="cdet-info-card">
+                    <div class="cdet-info-row">
+                        <span class="cdet-info-label">Category</span>
+                        <span class="cdet-cat-chip" style="--cat-color:@GetCategoryColor(complaint.CategoryName)">
+                            @complaint.CategoryName
+                        </span>
+                    </div>
+                    <div class="cdet-info-divider"></div>
+                    <div class="cdet-info-row">
+                        <span class="cdet-info-label">Priority</span>
+                        <span class="cdet-priority-badge cdet-p-@complaint.Priority.ToString().ToLower()">
+                            @GetPriorityIcon(complaint.Priority) @complaint.Priority.ToString()
+                        </span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(complaint.AssignedAdminName))
+                    {
+                        <div class="cdet-info-divider"></div>
+                        <div class="cdet-info-row">
+                            <span class="cdet-info-label">Assigned To</span>
+                            <span class="cdet-info-value">@complaint.AssignedAdminName</span>
+                        </div>
+                    }
+                </div>
+
+                <!-- SLA Card -->
+                <div class="cdet-sla-card">
+                    <div class="cdet-sla-header">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        SLA Deadline
+                    </div>
+                    @if (complaint.SlaDeadline.HasValue)
+                    {
+                        var elapsed = GetElapsedPercent(complaint);
+                        var remaining = GetRemainingTime(complaint);
+                        var color = elapsed < 50 ? "#16A34A" : elapsed < 80 ? "#D97706" : elapsed < 100 ? "#EA580C" : "#DC2626";
+                        <div class="cdet-sla-body">
+                            <div class="cdet-sla-progress-track">
+                                <div class="cdet-sla-progress-fill"
+                                     style="width:@(Math.Min(elapsed,100))%; background:@color">
+                                </div>
+                            </div>
+                            <div class="cdet-sla-meta">
+                                <span style="color:@color; font-weight:700; font-size:0.82rem;">@remaining</span>
+                                <span class="cdet-sla-pct">@(elapsed.ToString("F1"))%</span>
+                            </div>
+                            <div class="cdet-sla-deadline">
+                                Due: @complaint.SlaDeadline.Value.ToString("MMM dd, yyyy")
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="cdet-sla-none">No SLA deadline set</p>
+                    }
+                </div>
+
+                <!-- Quick actions -->
+                @if (complaint.Status == ComplaintStatus.Resolved && !hasFeedback)
+                {
+                    <a href="/citizen/feedback/@complaint.Id" class="cdet-feedback-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                        Rate This Resolution
+                    </a>
+                }
+
+            </div>
+        </div>
+    }
+</div>
+
+@if (ShowReopenModal)
+{
+    <div class="cp-modal-overlay" @onclick="() => ShowReopenModal = false">
+        <div class="cp-modal" @onclick:stopPropagation>
+            <div class="cp-modal-header">
+                <span>Reopen Complaint</span>
+                <button class="cp-modal-close" @onclick="() => ShowReopenModal = false">&times;</button>
+            </div>
+            <div class="cp-form-group">
+                <label class="cp-form-label">Reason for reopening</label>
+                <textarea class="cp-textarea" @bind-value="ReopenReason" @bind-value:event="oninput" placeholder="Why are you reopening this complaint..." maxlength="500"></textarea>
+            </div>
+            <div class="cp-modal-footer">
+                <button class="cp-btn cp-btn-secondary" @onclick="() => ShowReopenModal = false">Cancel</button>
+                <button class="cp-btn cp-btn-primary" @onclick="HandleReopenSubmit" disabled="@(string.IsNullOrWhiteSpace(ReopenReason))">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private ComplaintDto? complaint;
+    private bool isLoading = true;
+    private bool ShowReopenModal;
+    private string ReopenReason = "";
+    private bool hasFeedback;
+    private int UserId;
+    private List<StatusHistoryDto> statusHistory => complaint?.StatusHistories ?? new();
+    private bool CanReopen => (complaint?.Status == ComplaintStatus.Resolved || complaint?.Status == ComplaintStatus.Closed)
+        && complaint.ResolvedAt.HasValue && (DateTime.UtcNow - complaint.ResolvedAt.Value).TotalDays <= 7;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        UserId = int.Parse(user.FindFirst("userId")?.Value ?? "0");
+
+        try
+        {
+            complaint = await ComplaintService.GetByIdAsync(Id);
+            hasFeedback = await FeedbackService.HasFeedbackAsync(Id, UserId);
+        }
+        catch { Navigation.NavigateTo("/citizen/complaints"); }
+
+        isLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && complaint?.Latitude.HasValue == true && complaint?.Longitude.HasValue == true)
+        {
+            await JS.InvokeVoidAsync("CivicMap.initViewMap", $"detail-map-{complaint.Id}",
+                complaint.Latitude, complaint.Longitude, complaint.Title);
+        }
+    }
+
+    private void OpenReopenModal() { ShowReopenModal = true; }
+
+    private async Task HandleReopenSubmit()
+    {
+        try
+        {
+            complaint = await ComplaintService.ReopenComplaintAsync(Id, ReopenReason, UserId);
+            ShowReopenModal = false;
+            ReopenReason = "";
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("console.error", "Reopen failed: " + ex.Message);
+        }
+    }
+
+    private string GetStatusClass(ComplaintStatus s) => s switch
+    {
+        ComplaintStatus.Pending => "pending",
+        ComplaintStatus.UnderReview => "review",
+        ComplaintStatus.InProgress => "inprogress",
+        ComplaintStatus.Resolved => "resolved",
+        ComplaintStatus.Closed => "closed",
+        ComplaintStatus.Rejected => "rejected",
+        ComplaintStatus.Reopened => "reopened",
+        _ => "pending"
+    };
+
+    private string GetStatusClass(string status) =>
+        Enum.TryParse<ComplaintStatus>(status, out var s) ? GetStatusClass(s) : "pending";
+
+    private string GetStatusLabel(string status) =>
+        Enum.TryParse<ComplaintStatus>(status, out var s) ? GetStatusLabel(s) : status;
+
+    private string GetStatusLabel(ComplaintStatus s) => s switch
+    {
+        ComplaintStatus.Pending => "Pending",
+        ComplaintStatus.UnderReview => "Under Review",
+        ComplaintStatus.InProgress => "In Progress",
+        ComplaintStatus.Resolved => "Resolved",
+        ComplaintStatus.Closed => "Closed",
+        ComplaintStatus.Rejected => "Rejected",
+        ComplaintStatus.Reopened => "Reopened",
+        _ => s.ToString()
+    };
+
+    private string GetPriorityIcon(PriorityLevel p) => p switch
+    {
+        PriorityLevel.Critical => "\U0001F534",
+        PriorityLevel.High => "\U0001F7E0",
+        PriorityLevel.Medium => "\U0001F7E1",
+        PriorityLevel.Low => "\U0001F7E2",
+        _ => "\u26AA"
+    };
+
+    private string GetCategoryColor(string? name) => name?.ToLower() switch
+    {
+        var s when s?.Contains("road") == true => "#EA580C",
+        var s when s?.Contains("water") == true => "#2563EB",
+        var s when s?.Contains("electric") == true => "#D97706",
+        var s when s?.Contains("waste") == true || s?.Contains("sanit") == true => "#16A34A",
+        var s when s?.Contains("light") == true => "#7C3AED",
+        var s when s?.Contains("sewer") == true => "#0891B2",
+        var s when s?.Contains("park") == true || s?.Contains("green") == true => "#15803D",
+        var s when s?.Contains("build") == true || s?.Contains("hazard") == true => "#DC2626",
+        var s when s?.Contains("noise") == true => "#9333EA",
+        var s when s?.Contains("encroach") == true => "#B45309",
+        _ => "#6B7280"
+    };
+
+    private double GetElapsedPercent(ComplaintDto c)
+    {
+        if (!c.SlaDeadline.HasValue) return 0;
+        var total = (c.SlaDeadline.Value - c.CreatedAt).TotalMinutes;
+        var elapsed = (DateTime.UtcNow - c.CreatedAt).TotalMinutes;
+        if (total <= 0) return 100;
+        return Math.Min(Math.Round((elapsed / total) * 100, 1), 100);
+    }
+
+    private string GetRemainingTime(ComplaintDto c)
+    {
+        if (!c.SlaDeadline.HasValue) return "";
+        var remaining = c.SlaDeadline.Value - DateTime.UtcNow;
+        if (remaining.TotalSeconds <= 0) return "\u26A0\uFE0F Overdue";
+        if (remaining.TotalDays >= 1) return $"{(int)remaining.TotalDays}d {remaining.Hours}h remaining";
+        if (remaining.TotalHours >= 1) return $"{(int)remaining.TotalHours}h {remaining.Minutes}m remaining";
+        return $"{(int)remaining.TotalMinutes}m remaining";
+    }
+
+    private string TruncateFileName(string? name, int max) =>
+        string.IsNullOrEmpty(name) ? "" :
+        name.Length <= max ? name : name.Substring(0, max - 3) + "...";
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes}B";
+        if (bytes < 1048576) return $"{bytes / 1024.0:F1}KB";
+        return $"{bytes / 1048576.0:F1}MB";
+    }
+}

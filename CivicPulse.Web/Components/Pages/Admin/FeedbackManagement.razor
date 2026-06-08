@@ -1,0 +1,202 @@
+@page "/admin/feedback"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@inject IFeedbackService FeedbackService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+
+<style>
+    .af-page { }
+    .af-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:22px; }
+    .af-title { font-size:1.35rem; font-weight:800; color:#1A202C; margin:0; display:flex; align-items:center; gap:10px; }
+    .af-title i { color:#00897B; }
+    .af-card { background:#fff; border-radius:12px; border:1px solid #E2E8F0; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+    .af-search-wrap { display:flex; align-items:center; gap:8px; background:#F1F5F9; border:1px solid #E2E8F0; border-radius:8px; padding:8px 14px; color:#94A3B8; font-size:.85rem; min-width:260px; }
+    .af-search-wrap input { border:none; background:none; outline:none; font-size:.85rem; color:#1E293B; width:100%; }
+    .af-search-wrap input::placeholder { color:#94A3B8; }
+    .af-stats { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+    .af-stat { background:#fff; border-radius:10px; border:1px solid #E2E8F0; padding:14px 20px; display:flex; align-items:center; gap:14px; flex:1; min-width:140px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+    .af-stat-icon { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.1rem; flex-shrink:0; }
+    .af-stat-num { display:block; font-size:1.4rem; font-weight:800; color:#1A202C; line-height:1.2; }
+    .af-stat-label { display:block; font-size:.75rem; color:#64748B; font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+    .af-table-wrap { overflow-x:auto; }
+    .af-table { width:100%; border-collapse:collapse; font-size:.85rem; }
+    .af-table th { text-align:left; padding:14px 18px; font-weight:700; font-size:.75rem; text-transform:uppercase; letter-spacing:.5px; color:#64748B; border-bottom:2px solid #E2E8F0; background:#FAFBFC; white-space:nowrap; }
+    .af-table td { padding:14px 18px; border-bottom:1px solid #F1F5F9; color:#334155; }
+    .af-row { cursor:pointer; transition:background .12s; }
+    .af-row:hover { background:#F8FAFC; }
+    .af-citizen { font-weight:600; color:#1E293B; }
+    .af-ref { font-family:'Courier New',monospace; font-size:.8rem; background:#F1F5F9; padding:2px 8px; border-radius:4px; color:#1B3A6B; }
+    .af-stars { display:inline-flex; gap:1px; align-items:center; }
+    .af-comment { color:#475569; max-width:260px; display:inline-block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-style:italic; }
+    .af-date { color:#64748B; font-size:.8rem; white-space:nowrap; }
+    .af-pagination { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-top:1px solid #E2E8F0; flex-wrap:wrap; gap:8px; }
+    .af-page-info { font-size:.8rem; color:#64748B; }
+    .af-page-controls { display:flex; gap:4px; align-items:center; }
+    .af-page-btn { background:#fff; border:1px solid #E2E8F0; color:#475569; padding:6px 12px; border-radius:6px; font-size:.8rem; cursor:pointer; transition:all .12s; font-weight:500; }
+    .af-page-btn:hover:not(:disabled) { border-color:#1B3A6B; color:#1B3A6B; }
+    .af-page-btn.active { background:#1B3A6B; border-color:#1B3A6B; color:#fff; }
+    .af-empty { text-align:center; padding:48px 20px; color:#94A3B8; }
+    .af-empty i { font-size:2.5rem; display:block; margin-bottom:12px; color:#CBD5E1; }
+    .af-empty p { margin:0; font-weight:600; font-size:.95rem; }
+    @@media (max-width:768px) {
+        .af-stats { flex-direction:column; }
+    }
+</style>
+
+<div class="af-page">
+
+    <div class="af-header">
+        <h1 class="af-title">
+            <i class="bi bi-chat-square-text-fill"></i>
+            Feedback Management
+        </h1>
+        <div class="af-search-wrap">
+            <i class="bi bi-search"></i>
+            <input type="text" placeholder="Search by complaint ID or citizen name..." value="@Search" @oninput="OnSearchChanged" />
+        </div>
+    </div>
+
+    <div class="af-stats">
+        <div class="af-stat">
+            <div class="af-stat-icon" style="background:#F0FDF4;color:#16A34A">
+                <i class="bi bi-star-fill"></i>
+            </div>
+            <div>
+                <span class="af-stat-num">@TotalCount</span>
+                <span class="af-stat-label">Total Feedbacks</span>
+            </div>
+        </div>
+        <div class="af-stat">
+            <div class="af-stat-icon" style="background:#FFFBEB;color:#D97706">
+                <i class="bi bi-star-half"></i>
+            </div>
+            <div>
+                <span class="af-stat-num">@AvgRating.ToString("F1")</span>
+                <span class="af-stat-label">Avg. Rating</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="af-card">
+        <div class="af-table-wrap">
+            <table class="af-table">
+                <thead>
+                    <tr>
+                        <th>Citizen</th>
+                        <th>Complaint</th>
+                        <th>Rating</th>
+                        <th>Comment</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!Items.Any())
+                    {
+                        <tr>
+                            <td colspan="5">
+                                <div class="af-empty">
+                                    <i class="bi bi-chat-square-text"></i>
+                                    <p>No feedback available for resolved complaints.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var fb in Items)
+                        {
+                            <tr class="af-row" @onclick="() => GoToComplaint(fb.ComplaintId)">
+                                <td><span class="af-citizen">@fb.CitizenName</span></td>
+                                <td><span class="af-ref">@fb.ComplaintNumber</span></td>
+                                <td>
+                                    <span class="af-stars">
+                                        @for (int s = 1; s <= 5; s++)
+                                        {
+                                            if (s <= fb.Rating)
+                                            {
+                                                <svg viewBox="0 0 20 20" width="16" height="16" fill="#F59E0B"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                            }
+                                            else
+                                            {
+                                                <svg viewBox="0 0 20 20" width="16" height="16" fill="#D1D5DB"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                            }
+                                        }
+                                    </span>
+                                </td>
+                                <td><span class="af-comment" title="@fb.Comment">@Truncate(fb.Comment, 60)</span></td>
+                                <td><span class="af-date">@fb.CreatedAt.ToString("MMM dd, yyyy")</span></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (TotalPages > 1)
+        {
+            <div class="af-pagination">
+                <span class="af-page-info">
+                    Showing @((Page - 1) * PageSize + 1)-@Math.Min(Page * PageSize, TotalCount) of @TotalCount
+                </span>
+                <div class="af-page-controls">
+                    <button class="af-page-btn" disabled="@(Page <= 1)" @onclick="() => GoToPage(Page - 1)">
+                        <i class="bi bi-chevron-left"></i> Prev
+                    </button>
+                    @for (int p = Math.Max(1, Page - 2); p <= Math.Min(TotalPages, Page + 2); p++)
+                    {
+                        <button class="af-page-btn @(p == Page ? "active" : "")" @onclick="() => GoToPage(p)">@p</button>
+                    }
+                    <button class="af-page-btn" disabled="@(Page >= TotalPages)" @onclick="() => GoToPage(Page + 1)">
+                        Next <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+
+</div>
+
+@code {
+    private List<FeedbackDto> Items = new();
+    private int Page = 1;
+    private int PageSize = 10;
+    private int TotalCount;
+    private int TotalPages => (int)Math.Ceiling(TotalCount / (double)PageSize);
+    private double AvgRating;
+    private string Search = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+        AvgRating = await FeedbackService.GetAverageRatingAsync();
+    }
+
+    private void GoToComplaint(int id) => Navigation.NavigateTo($"/admin/complaints/{id}");
+
+    private async Task LoadDataAsync()
+    {
+        var result = await FeedbackService.GetAllPagedAsync(Page, PageSize,
+            string.IsNullOrWhiteSpace(Search) ? null : Search);
+        Items = result.Items;
+        TotalCount = result.TotalCount;
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs e)
+    {
+        Search = e.Value?.ToString() ?? "";
+        Page = 1;
+        await LoadDataAsync();
+    }
+
+    private async Task GoToPage(int page)
+    {
+        Page = page;
+        await LoadDataAsync();
+    }
+
+    private string Truncate(string text, int max) =>
+        string.IsNullOrEmpty(text) ? "" :
+        text.Length <= max ? text : text.Substring(0, max) + "...";
+}

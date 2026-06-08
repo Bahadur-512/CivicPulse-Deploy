@@ -1,0 +1,16 @@
+@* Renders a colored pill badge for complaint status *@
+
+<span class="cp-badge cp-badge-@StatusClass">@DisplayText</span>
+
+@code {
+    [Parameter] public ComplaintStatus Status { get; set; }
+
+    private string StatusClass => Status.ToString().ToLowerInvariant();
+
+    private string DisplayText => Status switch
+    {
+        ComplaintStatus.UnderReview => "Under Review",
+        ComplaintStatus.InProgress => "In Progress",
+        _ => Status.ToString()
+    };
+}

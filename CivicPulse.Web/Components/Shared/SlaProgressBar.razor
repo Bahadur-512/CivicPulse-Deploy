@@ -1,0 +1,80 @@
+@* Shows SLA progress bar with remaining time *@
+
+<div class="cp-sla-bar @SlaClass">
+    <div class="cp-sla-fill" style="width: @ElapsedPercent%;"></div>
+</div>
+<div class="cp-sla-text">
+    <span style="color: @TextColor; font-weight: 600;">
+        @if (IsBreached)
+        {
+            <span class="cp-sla-breached">⚠️ SLA Breached</span>
+        }
+        else
+        {
+            <span>@remainingText</span>
+        }
+    </span>
+    <span>@ElapsedPercent%</span>
+</div>
+
+@code {
+    [Parameter] public DateTime? SlaDeadline { get; set; }
+    [Parameter] public DateTime CreatedAt { get; set; }
+    [Parameter] public bool IsBreached { get; set; }
+    [Parameter] public int TimerIntervalMs { get; set; } = 60000;
+
+    private double ElapsedPercent { get; set; }
+    private string remainingText = "";
+    private string SlaClass => IsBreached ? "cp-sla-red" :
+        ElapsedPercent >= 80 ? "cp-sla-orange" :
+        ElapsedPercent >= 50 ? "cp-sla-yellow" : "cp-sla-green";
+    private string TextColor => IsBreached ? "var(--cp-critical)" :
+        ElapsedPercent >= 80 ? "var(--cp-high)" : "var(--cp-resolved)";
+
+    protected override void OnInitialized()
+    {
+        CalculateSla();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var timer = new System.Threading.Timer(_ =>
+            {
+                CalculateSla();
+                InvokeAsync(StateHasChanged);
+            }, null, TimerIntervalMs, TimerIntervalMs);
+        }
+    }
+
+    private void CalculateSla()
+    {
+        if (!SlaDeadline.HasValue || IsBreached)
+        {
+            ElapsedPercent = IsBreached ? 100 : 0;
+            remainingText = IsBreached ? "Overdue" : "No SLA";
+            return;
+        }
+
+        var totalSeconds = (SlaDeadline.Value - CreatedAt).TotalSeconds;
+        var elapsedSeconds = (DateTime.UtcNow - CreatedAt).TotalSeconds;
+
+        ElapsedPercent = totalSeconds > 0
+            ? Math.Round(Math.Min(elapsedSeconds / totalSeconds * 100, 100), 1)
+            : 100;
+
+        var remaining = SlaDeadline.Value - DateTime.UtcNow;
+        if (remaining.TotalSeconds <= 0)
+        {
+            remainingText = "Overdue";
+            ElapsedPercent = 100;
+        }
+        else if (remaining.TotalDays >= 1)
+            remainingText = $"{(int)remaining.TotalDays}d {remaining.Hours}h remaining";
+        else if (remaining.TotalHours >= 1)
+            remainingText = $"{(int)remaining.TotalHours}h {remaining.Minutes}m remaining";
+        else
+            remainingText = $"{(int)remaining.TotalMinutes}m remaining";
+    }
+}

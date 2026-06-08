@@ -1,0 +1,906 @@
+@page "/citizen/submit"
+@layout CitizenLayout
+@attribute [Authorize(Policy = "CitizenOnly")]
+@inject IComplaintService ComplaintService
+@inject IAttachmentService AttachmentService
+@inject AiCategorizationService AiService
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IHttpClientFactory HttpClientFactory
+@inject IConfiguration Config
+
+<div class="sc-page">
+
+    <div class="sc-page-header">
+        <div>
+            <h1 class="sc-page-title">
+                <i class="bi bi-plus-circle-fill"></i>
+                Submit New Complaint
+            </h1>
+            <p class="sc-page-subtitle">Report an issue to civic authorities. Please fill in the details below step-by-step.</p>
+        </div>
+    </div>
+
+    <div class="sc-stepper">
+        <div class="sc-step @GetStepClass(1)">
+            <div class="sc-step-circle">
+                @if (CurrentStep > 1) { <i class="bi bi-check-lg"></i> }
+                else { <span>1</span> }
+            </div>
+            <div class="sc-step-label">
+                <span class="sc-step-name">Describe</span>
+                <span class="sc-step-hint">Provide details</span>
+            </div>
+        </div>
+        <div class="sc-step-connector @(CurrentStep >= 2 ? "active" : "")"></div>
+        <div class="sc-step @GetStepClass(2)">
+            <div class="sc-step-circle">
+                @if (CurrentStep > 2) { <i class="bi bi-check-lg"></i> }
+                else { <span>2</span> }
+            </div>
+            <div class="sc-step-label">
+                <span class="sc-step-name">Location</span>
+                <span class="sc-step-hint">Mark on map</span>
+            </div>
+        </div>
+        <div class="sc-step-connector @(CurrentStep >= 3 ? "active" : "")"></div>
+        <div class="sc-step @GetStepClass(3)">
+            <div class="sc-step-circle"><span>3</span></div>
+            <div class="sc-step-label">
+                <span class="sc-step-name">Attachments</span>
+                <span class="sc-step-hint">Upload photos</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="sc-card">
+
+        @if (CurrentStep == 1)
+        {
+            <div class="sc-step-content">
+
+                <div class="sc-field-group">
+                    <label class="sc-label">
+                        Title <span class="sc-required">*</span>
+                        <span class="sc-char-counter">@(model.Title?.Length ?? 0) / 150</span>
+                    </label>
+                    <div class="sc-input-wrapper">
+                        <i class="bi bi-pencil sc-input-icon"></i>
+                        <input class="sc-input @(titleValid ? "" : (model.Title?.Length ?? 0) > 0 ? "error" : "")"
+                               type="text" placeholder="e.g., Broken street light, water leakage..."
+                               maxlength="150" @bind="model.Title" @bind:event="oninput" />
+                    </div>
+                    @if ((model.Title?.Length ?? 0) > 0 && !titleValid)
+                    {
+                        <span class="sc-field-error"><i class="bi bi-x-circle"></i> Title is required (min 10 characters)</span>
+                    }
+                </div>
+
+                <div class="sc-field-group">
+                    <label class="sc-label">
+                        Description <span class="sc-required">*</span>
+                        <span class="sc-char-counter">@(model.Description?.Length ?? 0) / 2000</span>
+                    </label>
+                    <textarea class="sc-textarea @(descValid ? "" : (model.Description?.Length ?? 0) > 0 ? "error" : "")"
+                              placeholder="Describe the issue in detail. The more you write, the better our AI can categorize it..."
+                              maxlength="2000" rows="6"
+                              @bind="model.Description" @bind:event="oninput"></textarea>
+                    @if ((model.Description?.Length ?? 0) > 0 && !descValid)
+                    {
+                        <span class="sc-field-error"><i class="bi bi-x-circle"></i> Description is required (min 20 characters)</span>
+                    }
+                </div>
+
+                <div class="sc-ai-analyze-row">
+                    <button class="sc-ai-analyze-btn @(isAnalyzing ? "analyzing" : "")"
+                            type="button"
+                            @onclick="AnalyzeComplaint"
+                            disabled="@(isAnalyzing || string.IsNullOrWhiteSpace(model.Description) || model.Description.Length < 20)">
+                        @if (isAnalyzing)
+                        {
+                            <span class="sc-ai-spin"></span>
+                            <span>AI is analyzing your complaint...</span>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M12 2a10 10 0 1010 10A10 10 0 0012 2zm0 18a8 8 0 118-8 8 8 0 01-8 8z"/>
+                                <path d="M12 6v6l4 2"/>
+                            </svg>
+                            <span>Analyze with AI</span>
+                        }
+                    </button>
+                    <span class="sc-ai-hint">
+                        Our AI will automatically detect the complaint category and priority
+                    </span>
+                </div>
+
+                @if (aiResult != null)
+                {
+                    <div class="sc-ai-insight-card">
+                        <div class="sc-ai-insight-header">
+                            <div class="sc-ai-insight-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22">
+                                    <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"/>
+                                    <circle cx="12" cy="12" r="2" fill="currentColor"/>
+                                </svg>
+                            </div>
+                            <div class="sc-ai-insight-heading">
+                                <div class="sc-ai-insight-title-row">
+                                    <span class="sc-ai-insight-title">AI Classification Insights</span>
+                                    <span class="sc-ai-insight-tag">AI</span>
+                                </div>
+                                <div class="sc-ai-insight-subtitle">Our AI automatically detects the category and priority based on your description.</div>
+                            </div>
+                            <button class="sc-ai-insight-refresh" type="button" @onclick="AnalyzeComplaint" title="Re-analyze">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+                                    <polyline points="1 4 1 10 7 10"/>
+                                    <path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div class="sc-ai-insight-body">
+                            <div class="sc-ai-insight-cell">
+                                <div class="sc-ai-insight-cell-label">Detected Category</div>
+                                <span class="sc-ai-insight-badge"
+                                      style="background:@GetCategoryColor(aiResult.CategoryName)18; color:@GetCategoryColor(aiResult.CategoryName)">
+                                    @aiResult.CategoryName
+                                </span>
+                            </div>
+
+                            <div class="sc-ai-insight-divider"></div>
+
+                            <div class="sc-ai-insight-cell">
+                                <div class="sc-ai-insight-cell-label">Assigned Priority</div>
+                                <div class="sc-ai-insight-priority-row">
+                                    <span class="sc-ai-priority-dot @($"dot-{aiResult.Priority.ToLower()}")"></span>
+                                    <span class="sc-ai-priority-label">@aiResult.Priority</span>
+                                </div>
+                            </div>
+
+                            <div class="sc-ai-insight-divider"></div>
+
+                            <div class="sc-ai-insight-cell">
+                                <div class="sc-ai-insight-cell-label">Confidence Level</div>
+                                <div class="sc-ai-insight-progress">
+                                    <div class="sc-ai-insight-progress-track">
+                                        <div class="sc-ai-insight-progress-fill"
+                                             style="width:@((int)(aiResult.Confidence * 100))%"></div>
+                                    </div>
+                                    <span class="sc-ai-insight-progress-text">@((int)(aiResult.Confidence * 100))%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="sc-ai-insight-footer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                            <span>Category and priority are assigned automatically. No manual selection needed.</span>
+                        </div>
+                    </div>
+                }
+                else if (aiError != null)
+                {
+                    <div class="sc-ai-error-card">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        @aiError
+                    </div>
+                }
+
+                <div class="sc-step-footer">
+                    <div></div>
+                    <button class="sc-btn-primary" @onclick="NextStep" disabled="@(!CanProceedStep1)">
+                        Next Step
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                            <polyline points="12 5 19 12 12 19"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        }
+
+        @if (CurrentStep == 2)
+        {
+            <div class="sc-step-content">
+
+                <!-- LOCATION TOOLS ROW — GPS only -->
+                <div class="loc-tools-row">
+                    <button class="loc-gps-btn @(isLocating ? "locating" : "")"
+                            @onclick="UseCurrentLocation"
+                            disabled="@isLocating"
+                            title="Fetch my current GPS location">
+                        @if (isLocating)
+                        {
+                            <span class="loc-spin white"></span>
+                            <span>Getting location...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-crosshair2"></i>
+                            <span>Use My Current Location</span>
+                        }
+                    </button>
+
+                    @if (!string.IsNullOrEmpty(locationError))
+                    {
+                        <div class="loc-error-inline">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            @locationError
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrEmpty(locationSource))
+                {
+                    <div class="loc-result-banner">
+                        <span class="loc-source-badge source-@locationSourceType">
+                            @(locationSourceType switch {
+                                "gps"     => "GPS",
+                                "wifi"    => "WiFi",
+                                "ip"      => "IP Network",
+                                "default" => "Default",
+                                _         => ""
+                            })
+                        </span>
+                        @if (locationAccuracy.HasValue)
+                        {
+                            <span class="loc-accuracy-badge">±@((int)locationAccuracy.Value)m</span>
+                        }
+                        <span class="loc-source-text">@locationSource</span>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(locationWarning))
+                {
+                    <div class="loc-warning-banner">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        @locationWarning
+                    </div>
+                }
+
+                <div class="loc-hint-banner">
+                    <i class="bi bi-info-circle-fill"></i>
+                    <span>Click anywhere on the map to drop a pin, or use the buttons above to find your location automatically.</span>
+                </div>
+
+                <div class="loc-map-frame">
+                    <div class="loc-map-inner">
+                        <MapPicker OnLocationPicked="HandleLocationPicked" />
+                    </div>
+
+                    @if (model.Latitude.HasValue && model.Longitude.HasValue)
+                    {
+                        <div class="loc-pin-badge">
+                            <i class="bi bi-pin-map-fill"></i>
+                            Location pinned
+                        </div>
+                    }
+                </div>
+
+                @if (model.Latitude.HasValue && model.Longitude.HasValue)
+                {
+                    <div class="loc-confirm-card">
+                        <div class="loc-confirm-icon">
+                            <i class="bi bi-geo-alt-fill"></i>
+                        </div>
+                        <div class="loc-confirm-body">
+                            <span class="loc-confirm-label">Pinned Location</span>
+                            <span class="loc-confirm-coords">
+                                @model.Latitude.Value.ToString("F5")°N,
+                                @model.Longitude.Value.ToString("F5")°E
+                            </span>
+                            @if (!string.IsNullOrEmpty(model.LocationDescription))
+                            {
+                                <span class="loc-confirm-address">@model.LocationDescription</span>
+                            }
+                        </div>
+                        <button class="loc-confirm-clear" @onclick="ClearLocation" title="Remove pin">
+                            <i class="bi bi-x-circle"></i>
+                            Clear
+                        </button>
+                    </div>
+                }
+
+                <div class="sc-field-group" style="margin-top: 16px">
+                    <label class="sc-label">
+                        Location Description
+                        <span class="sc-optional">optional — auto-filled when you pin</span>
+                    </label>
+                    <div class="sc-input-wrapper">
+                        <i class="bi bi-geo-alt sc-input-icon"></i>
+                        <input class="sc-input"
+                               type="text"
+                               placeholder="Street address, landmark, or area description..."
+                               autocomplete="off"
+                               spellcheck="false"
+                               @bind="model.LocationDescription"
+                               @bind:event="oninput" />
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(locationError))
+                {
+                    <div class="loc-error-msg">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        @locationError
+                    </div>
+                }
+
+                <div class="sc-step-footer">
+                    <button class="sc-btn-ghost" @onclick="PrevStep">
+                        <i class="bi bi-arrow-left"></i> Back
+                    </button>
+                    <button class="sc-btn-primary" @onclick="NextStep">
+                        Next Step <i class="bi bi-arrow-right"></i>
+                    </button>
+                </div>
+
+            </div>
+        }
+
+        @if (CurrentStep == 3)
+        {
+            <div class="sc-step-content">
+
+                @* ── FIX 1: Upload zone wrapped in label so clicking anywhere opens file picker ── *@
+                <div class="sc-field-group">
+                    <label class="sc-label">
+                        Attachments
+                        <span class="sc-optional">optional — max 5 files, 5MB each</span>
+                    </label>
+
+                    <label class="sc-upload-zone @(isDragging ? "dragging" : "")"
+                           @ondragenter:preventDefault="true"
+                           @ondragenter="() => isDragging = true"
+                           @ondragleave="() => isDragging = false"
+                           @ondragover:preventDefault="true"
+                           @ondrop:preventDefault="true"
+                           @ondrop="HandleDrop">
+
+                        <div class="sc-upload-icon">
+                            @if (SelectedFiles.Count >= 5)
+                            {
+                                <span>✅</span>
+                            }
+                            else
+                            {
+                                <span>📎</span>
+                            }
+                        </div>
+
+                        @if (SelectedFiles.Count == 0)
+                        {
+                            <p class="sc-upload-text">Drag & drop files here or <span class="sc-upload-link">click to browse</span></p>
+                            <p class="sc-upload-hint">JPG, PNG, PDF — max 5MB each, up to 5 files</p>
+                        }
+                        else
+                        {
+                            <p class="sc-upload-text">@SelectedFiles.Count file(s) selected — <span class="sc-upload-link">add more</span></p>
+                        }
+
+                        <InputFile OnChange="HandleFileSelected"
+                                   multiple
+                                   accept=".jpg,.jpeg,.png,.webp,.pdf"
+                                   style="display:none"
+                                   disabled="@(SelectedFiles.Count >= 5)" />
+                    </label>
+
+                    @if (SelectedFiles.Any())
+                    {
+                        <div class="sc-file-list">
+                            @foreach (var file in SelectedFiles)
+                            {
+                                var f = file;
+                                <div class="sc-file-item">
+                                    <div class="sc-file-thumb">
+                                        @if (f.ContentType.StartsWith("image"))
+                                        {
+                                            <i class="bi bi-file-image" style="color:#2563EB"></i>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-file-pdf" style="color:#DC2626"></i>
+                                        }
+                                    </div>
+                                    <div class="sc-file-info">
+                                        <span class="sc-file-name" title="@f.Name">
+                                            @TruncateFileName(f.Name, 35)
+                                        </span>
+                                        <span class="sc-file-size">@FormatFileSize(f.Size)</span>
+                                    </div>
+                                    <button class="sc-file-remove"
+                                            type="button"
+                                            @onclick="() => RemoveFile(f)"
+                                            @onclick:stopPropagation="true">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (SelectedFiles.Any())
+                    {
+                        <div class="sc-file-count">
+                            <span class="sc-file-count-bar">
+                                <span class="sc-file-count-fill" style="width:@(SelectedFiles.Count * 20)%"></span>
+                            </span>
+                            <span>@SelectedFiles.Count / 5 files</span>
+                        </div>
+                    }
+                </div>
+
+                @* ── FIX 2: Review card with gradient header and icons ── *@
+                <div class="sc-review-card">
+                    <div class="sc-review-header">
+                        <i class="bi bi-clipboard2-check-fill"></i>
+                        Review Your Complaint
+                        <span class="sc-review-edit-hint">Go back to edit anything</span>
+                    </div>
+
+                    <div class="sc-review-grid">
+                        <div class="sc-review-item">
+                            <span class="sc-review-label">Title</span>
+                            <span class="sc-review-value">@model.Title</span>
+                        </div>
+
+                        <div class="sc-review-item">
+                            <span class="sc-review-label">Category</span>
+                            <span class="sc-review-value">
+                                <span class="sc-cat-mini-badge"
+                                      style="background:@GetCategoryColor(aiResult?.CategoryName ?? "")18; color:@GetCategoryColor(aiResult?.CategoryName ?? "")">
+                                    @aiResult?.CategoryName
+                                </span>
+                            </span>
+                        </div>
+
+                        <div class="sc-review-item">
+                            <span class="sc-review-label">Priority</span>
+                            <span class="sc-review-value">
+                                <span class="sc-priority-badge priority-@(aiResult?.Priority.ToLower() ?? "medium")">
+                                    @GetPriorityIcon(aiResult?.Priority ?? "Medium")
+                                    @(aiResult?.Priority ?? "Medium")
+                                </span>
+                            </span>
+                        </div>
+
+                        <div class="sc-review-item">
+                            <span class="sc-review-label">Location</span>
+                            <span class="sc-review-value">
+                                @if (!string.IsNullOrEmpty(model.LocationDescription))
+                                {
+                                    <span><i class="bi bi-geo-alt-fill" style="color:#DC2626"></i> @model.LocationDescription</span>
+                                }
+                                else if (model.Latitude.HasValue)
+                                {
+                                    <span><i class="bi bi-geo-alt-fill" style="color:#DC2626"></i> @model.Latitude.Value.ToString("F4")°, @model.Longitude.Value.ToString("F4")°</span>
+                                }
+                                else
+                                {
+                                    <span class="sc-review-na"><i class="bi bi-dash"></i> Not specified</span>
+                                }
+                            </span>
+                        </div>
+
+                        <div class="sc-review-item sc-review-full">
+                            <span class="sc-review-label">Description</span>
+                            <span class="sc-review-value sc-review-desc">@model.Description</span>
+                        </div>
+
+                        <div class="sc-review-item">
+                            <span class="sc-review-label">Attachments</span>
+                            <span class="sc-review-value">
+                                @if (SelectedFiles.Count == 0)
+                                {
+                                    <span class="sc-review-na">None</span>
+                                }
+                                else
+                                {
+                                    <span><i class="bi bi-paperclip"></i> @SelectedFiles.Count file(s) attached</span>
+                                }
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <label class="sc-confirm-label">
+                    <input type="checkbox" @bind="TermsAccepted" />
+                    <span class="sc-confirm-custom"></span>
+                    I confirm that the information above is accurate and complete
+                </label>
+
+                @if (!string.IsNullOrEmpty(submitError))
+                {
+                    <div class="sc-error-banner">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        @submitError
+                    </div>
+                }
+
+                @if (ShowConfirmation)
+                {
+                    <div class="sc-success-banner">
+                        <i class="bi bi-check-circle-fill"></i>
+                        Complaint submitted successfully!
+                    </div>
+                }
+
+                <div class="sc-step-footer">
+                    <button class="sc-btn-ghost" @onclick="PrevStep">
+                        <i class="bi bi-arrow-left"></i> Back
+                    </button>
+                    <button class="sc-btn-submit @(IsSubmitting ? "loading" : "")"
+                            @onclick="HandleSubmit"
+                            disabled="@(!TermsAccepted || IsSubmitting)">
+                        @if (IsSubmitting)
+                        {
+                            <span class="sc-btn-spinner"></span>
+                            <text>Submitting...</text>
+                        }
+                        else
+                        {
+                            <i class="bi bi-send-fill"></i>
+                            <text>Submit Complaint</text>
+                        }
+                    </button>
+                </div>
+
+            </div>
+        }
+
+    </div>
+</div>
+
+@if (ShowConfirmation)
+{
+    <div class="cp-modal-overlay" @onclick="() => ShowConfirmation = false">
+        <div class="cp-modal" @onclick:stopPropagation>
+            <div class="cp-modal-header">
+                <span>✅ Complaint submitted successfully!</span>
+                <button class="cp-modal-close" @onclick="() => ShowConfirmation = false">&times;</button>
+            </div>
+            <p>Complaint #: <strong>@SubmittedNumber</strong></p>
+            <div class="cp-modal-footer">
+                <a href="/citizen/complaints/@SubmittedId" class="cd-view-btn">View Details</a>
+                <a href="/citizen/complaints" class="cd-view-btn">My Complaints</a>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private CreateComplaintDto model = new();
+    private AiCategorizationResult? aiResult;
+    private string? aiError;
+    private int CurrentStep = 1;
+    private bool TermsAccepted;
+    private bool IsSubmitting;
+    private bool ShowConfirmation;
+    private string SubmittedNumber = "";
+    private int SubmittedId;
+    private List<IBrowserFile> SelectedFiles = new();
+    private int UserId;
+
+    private bool isAnalyzing;
+    private bool isDragging;
+    private string submitError = "";
+
+    private bool titleValid => model.Title.Length >= 10;
+    private bool descValid => model.Description.Length >= 20;
+    private bool CanProceedStep1 =>
+        titleValid && descValid && aiResult != null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var claims = string.Join(", ", user.Claims.Select(c => $"{c.Type}={c.Value}"));
+        Console.WriteLine($"[SubmitComplaint] Claims: {claims}");
+        Console.WriteLine($"[SubmitComplaint] IsAuthenticated: {user.Identity?.IsAuthenticated}");
+        UserId = int.Parse(user.FindFirst("userId")?.Value ?? "0");
+        Console.WriteLine($"[SubmitComplaint] UserId={UserId}");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var ipInfoToken = Config["ApiKeys:IpInfo"] ?? "";
+            await JS.InvokeVoidAsync("CivicLocation.setApiKey", ipInfoToken);
+        }
+    }
+
+    private async Task AnalyzeComplaint()
+    {
+        if (string.IsNullOrWhiteSpace(model.Description)) return;
+
+        isAnalyzing = true;
+        aiError = null;
+        aiResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await AiService.CategorizeAsync(
+                model.Title ?? "", model.Description);
+
+            if (result != null)
+            {
+                aiResult = result;
+                model.CategoryId = result.CategoryId;
+            }
+            else
+            {
+                aiError = "Could not classify this complaint. Please add more details to your description.";
+            }
+        }
+        catch (Exception ex)
+        {
+            aiError = "AI analysis failed. Please try again or add more descriptive text.";
+            Console.WriteLine($"AI error: {ex.Message}");
+        }
+        finally
+        {
+            isAnalyzing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task NextStep()
+    {
+        if (CurrentStep < 3) CurrentStep++;
+        await JS.InvokeVoidAsync("CivicInterop.scrollToTop");
+    }
+
+    private void PrevStep() { if (CurrentStep > 1) { CurrentStep--; } }
+
+    private async Task HandleLocationPicked((double Lat, double Lng, string Address) loc)
+    {
+        model.Latitude = loc.Lat;
+        model.Longitude = loc.Lng;
+        model.LocationDescription = loc.Address;
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        foreach (var file in e.GetMultipleFiles(5))
+        {
+            if (SelectedFiles.Count < 5 && file.Size <= 5 * 1024 * 1024)
+                SelectedFiles.Add(file);
+        }
+    }
+
+    private void HandleDrop() { isDragging = false; }
+
+    private void RemoveFile(IBrowserFile file) => SelectedFiles.Remove(file);
+
+    private async Task HandleSubmit()
+    {
+        IsSubmitting = true;
+        submitError = "";
+        try
+        {
+            var complaint = await ComplaintService.CreateComplaintAsync(model, UserId);
+            SubmittedNumber = complaint.ComplaintNumber;
+            SubmittedId = complaint.Id;
+
+            if (SelectedFiles.Count > 0)
+            {
+                var fileDtos = new List<FileUploadDto>();
+                foreach (var file in SelectedFiles)
+                {
+                    using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+                    using var ms = new MemoryStream();
+                    await stream.CopyToAsync(ms);
+                    fileDtos.Add(new FileUploadDto
+                    {
+                        FileName = file.Name,
+                        Content = ms.ToArray(),
+                        ContentType = file.ContentType,
+                        Size = file.Size
+                    });
+                }
+                await AttachmentService.UploadAsync(SubmittedId, UserId, fileDtos);
+            }
+
+            ShowConfirmation = true;
+        }
+        catch (Exception ex)
+        {
+            var inner = ex.InnerException?.Message;
+            submitError = inner != null
+                ? $"Failed to submit: {inner} (UserId={UserId})"
+                : $"Failed to submit: {ex.Message} (UserId={UserId})";
+            Console.WriteLine($"[SubmitError] UserId={UserId} {ex}");
+        }
+        finally
+        {
+            IsSubmitting = false;
+        }
+    }
+
+    private string GetStepClass(int step)
+    {
+        if (step < CurrentStep) return "completed";
+        if (step == CurrentStep) return "active";
+        return "upcoming";
+    }
+
+    private string GetCategoryColor(string name) => name?.ToLower() switch
+    {
+        var s when s?.Contains("road") == true => "#EA580C",
+        var s when s?.Contains("water") == true => "#2563EB",
+        var s when s?.Contains("electric") == true => "#D97706",
+        var s when s?.Contains("waste") == true || s?.Contains("sanit") == true => "#16A34A",
+        var s when s?.Contains("light") == true => "#7C3AED",
+        var s when s?.Contains("sewer") == true => "#0891B2",
+        var s when s?.Contains("park") == true || s?.Contains("green") == true => "#15803D",
+        var s when s?.Contains("build") == true || s?.Contains("hazard") == true => "#DC2626",
+        var s when s?.Contains("noise") == true => "#9333EA",
+        var s when s?.Contains("encroach") == true => "#B45309",
+        _ => "#6B7280"
+    };
+
+    private string GetPriorityIcon(PriorityLevel priority) => priority switch
+    {
+        PriorityLevel.Critical => "🔴",
+        PriorityLevel.High => "🟠",
+        PriorityLevel.Medium => "🟡",
+        PriorityLevel.Low => "🟢",
+        _ => "⚪"
+    };
+
+    private string GetPriorityIcon(string priority)
+    {
+        if (Enum.TryParse<PriorityLevel>(priority, out var level))
+            return GetPriorityIcon(level);
+        return "⚪";
+    }
+
+    private bool isLocating = false;
+    private string locationError = "";
+    private string locationSource = "";
+    private string locationSourceType = "";
+    private double? locationAccuracy = null;
+    private string locationWarning = "";
+
+    private async Task UseCurrentLocation()
+    {
+        locationError = "";
+        locationSource = "";
+        locationSourceType = "";
+        locationAccuracy = null;
+        locationWarning = "";
+        isLocating = true;
+        StateHasChanged();
+
+        try
+        {
+            var resultJson = await JS.InvokeAsync<string>("CivicLocation.getCurrentPositionJson");
+            if (string.IsNullOrEmpty(resultJson))
+            {
+                locationError = "Could not get location. Please pin manually on the map.";
+                return;
+            }
+
+            var result = System.Text.Json.JsonSerializer.Deserialize<LocationResult>(resultJson);
+            if (result == null || !string.IsNullOrEmpty(result.Error))
+            {
+                locationError = result?.Error ?? "Location failed. Please pin manually.";
+                return;
+            }
+
+            model.Latitude = result.Lat;
+            model.Longitude = result.Lng;
+
+            locationSourceType = result.Source;
+            locationAccuracy = result.Accuracy;
+
+            switch (result.Source)
+            {
+                case "gps":
+                    locationSource = "Located using device GPS";
+                    break;
+                case "wifi":
+                    locationSource = "Located using WiFi positioning";
+                    break;
+                case "ip":
+                    locationSource = $"Located via network — {result.City}, {result.Region}";
+                    locationWarning = "IP-based location is approximate. Please verify or adjust the pin on the map.";
+                    break;
+                case "default":
+                    locationSource = "Showing Islamabad — please tap the map to adjust your pin";
+                    locationWarning = "Could not detect your location automatically. Please place the pin on the map.";
+                    break;
+                default:
+                    locationSource = "Location set";
+                    break;
+            }
+
+            if (result.Source == "ip" && !string.IsNullOrEmpty(result.City))
+            {
+                if (string.IsNullOrEmpty(model.LocationDescription))
+                    model.LocationDescription = $"{result.City}, {result.Region}";
+            }
+
+            await JS.InvokeVoidAsync("CivicLocation.panMapToLocation", result.Lat, result.Lng);
+            await ReverseGeocodeAsync(result.Lat, result.Lng);
+        }
+        catch (Exception ex)
+        {
+            locationError = "Location failed. Please click on the map to pin manually.";
+            Console.WriteLine($"Location error: {ex.Message}");
+        }
+        finally
+        {
+            isLocating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReverseGeocodeAsync(double lat, double lng)
+    {
+        try
+        {
+            var address = await JS.InvokeAsync<string>("CivicLocation.reverseGeocode", lat, lng);
+            if (!string.IsNullOrEmpty(address))
+            {
+                model.LocationDescription = address;
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private class LocationResult
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("lat")]
+        public double Lat { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("lng")]
+        public double Lng { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("accuracy")]
+        public double? Accuracy { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("city")]
+        public string City { get; set; } = "";
+        [System.Text.Json.Serialization.JsonPropertyName("region")]
+        public string Region { get; set; } = "";
+        [System.Text.Json.Serialization.JsonPropertyName("country")]
+        public string Country { get; set; } = "";
+        [System.Text.Json.Serialization.JsonPropertyName("source")]
+        public string Source { get; set; } = "";
+        [System.Text.Json.Serialization.JsonPropertyName("error")]
+        public string? Error { get; set; }
+    }
+
+    private void ClearLocation()
+    {
+        model.Latitude = null;
+        model.Longitude = null;
+        model.LocationDescription = "";
+        locationSource = "";
+        locationSourceType = "";
+        locationAccuracy = null;
+        locationWarning = "";
+        StateHasChanged();
+    }
+
+    private string TruncateFileName(string name, int max) =>
+        name.Length <= max ? name : name.Substring(0, max - 3) + "...";
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1048576) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / 1048576.0:F1} MB";
+    }
+}

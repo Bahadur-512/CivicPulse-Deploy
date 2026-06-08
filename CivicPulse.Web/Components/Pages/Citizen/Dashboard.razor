@@ -1,0 +1,303 @@
+@page "/citizen/dashboard"
+@layout CitizenLayout
+@attribute [Authorize(Policy = "CitizenOnly")]
+@inject IComplaintService ComplaintService
+@inject IFeedbackService FeedbackService
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Navigation
+
+<div class="cd-page">
+
+    <div class="cd-welcome-banner">
+        <div class="cd-welcome-left">
+            <div class="cd-welcome-greeting">
+                <span class="cd-greeting-wave">👋</span>
+                <div>
+                    <h1 class="cd-welcome-title">Welcome back, <span>@FullName</span>!</h1>
+                    <p class="cd-welcome-sub">Your Voice. Your City. — Track your complaints in real time.</p>
+                </div>
+            </div>
+        </div>
+        <div class="cd-welcome-right">
+            <a href="/citizen/submit" class="cd-submit-cta">
+                <i class="bi bi-plus-circle-fill"></i>
+                Submit Complaint
+            </a>
+        </div>
+    </div>
+
+<style>
+    .cd-feedback-prompt { display:flex; align-items:center; gap:16px; background:linear-gradient(135deg,#FFFBEB,#FEF3C7); border:1.5px solid #FDE68A; border-radius:14px; padding:16px 20px; flex-wrap:wrap; }
+    .cd-feedback-prompt-icon { font-size:2rem; flex-shrink:0; }
+    .cd-feedback-prompt-body { flex:1; display:flex; flex-direction:column; gap:2px; }
+    .cd-feedback-prompt-title { font-size:.9rem; font-weight:700; color:#92400E; }
+    .cd-feedback-prompt-sub { font-size:.78rem; color:#B45309; }
+    .cd-feedback-prompt-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .cd-feedback-quick-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; background:#D97706; color:#fff; border-radius:8px; font-size:.78rem; font-weight:700; text-decoration:none; transition:all .15s; white-space:nowrap; }
+    .cd-feedback-quick-btn:hover { background:#B45309; transform:translateY(-1px); }
+</style>
+
+    @if (IsLoading)
+    {
+        <div class="cd-stats-grid">
+            @for (int i = 0; i < 4; i++)
+            {
+                <div class="cd-stat-card"><div class="skeleton cd-stat-skel"></div></div>
+            }
+        </div>
+        <div class="cd-skeleton-table">
+            @for (int i = 0; i < 4; i++)
+            {
+                <div class="cd-skeleton-row">
+                    <div class="skeleton cd-sk-num"></div>
+                    <div class="skeleton cd-sk-title"></div>
+                    <div class="skeleton cd-sk-badge"></div>
+                    <div class="skeleton cd-sk-badge"></div>
+                    <div class="skeleton cd-sk-sla"></div>
+                    <div class="skeleton cd-sk-btn"></div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="cd-stats-grid">
+            <div class="cd-stat-card cd-stat-total">
+                <div class="cd-stat-icon"><i class="bi bi-clipboard2-data"></i></div>
+                <div class="cd-stat-body">
+                    <span class="cd-stat-number">@Stats.TotalComplaints</span>
+                    <span class="cd-stat-label">Total Complaints</span>
+                </div>
+            </div>
+            <div class="cd-stat-card cd-stat-pending">
+                <div class="cd-stat-icon"><i class="bi bi-hourglass-split"></i></div>
+                <div class="cd-stat-body">
+                    <span class="cd-stat-number">@Stats.PendingCount</span>
+                    <span class="cd-stat-label">Pending</span>
+                </div>
+            </div>
+            <div class="cd-stat-card cd-stat-inprogress">
+                <div class="cd-stat-icon"><i class="bi bi-arrow-repeat"></i></div>
+                <div class="cd-stat-body">
+                    <span class="cd-stat-number">@Stats.InProgressCount</span>
+                    <span class="cd-stat-label">In Progress</span>
+                </div>
+            </div>
+            <div class="cd-stat-card cd-stat-resolved">
+                <div class="cd-stat-icon"><i class="bi bi-check-circle"></i></div>
+                <div class="cd-stat-body">
+                    <span class="cd-stat-number">@Stats.ResolvedCount</span>
+                    <span class="cd-stat-label">Resolved</span>
+                </div>
+            </div>
+        </div>
+
+        @if (complaintsNeedingFeedback.Any())
+        {
+            <div class="cd-feedback-prompt">
+                <div class="cd-feedback-prompt-icon">⭐</div>
+                <div class="cd-feedback-prompt-body">
+                    <span class="cd-feedback-prompt-title">
+                        @complaintsNeedingFeedback.Count complaint(s) awaiting your feedback
+                    </span>
+                    <span class="cd-feedback-prompt-sub">
+                        Help us improve by rating your experience
+                    </span>
+                </div>
+                <div class="cd-feedback-prompt-actions">
+                    @foreach (var c in complaintsNeedingFeedback.Take(3))
+                    {
+                        <a href="/citizen/feedback/@c.Id" class="cd-feedback-quick-btn">
+                            Rate @c.ComplaintNumber
+                        </a>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="cd-card">
+            <div class="cd-card-header">
+                <h2 class="cd-card-title">
+                    <i class="bi bi-card-list"></i>
+                    My Recent Complaints
+                </h2>
+                <a href="/citizen/complaints" class="cd-view-all-btn">
+                    View All <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+
+            @if (Stats.RecentComplaints.Count == 0)
+            {
+                <div class="cd-empty-state">
+                    <div class="cd-empty-icon">📋</div>
+                    <h3>No complaints found</h3>
+                    <p>Submit your first complaint to get started</p>
+                    <a href="/citizen/submit" class="cd-submit-cta small">
+                        <i class="bi bi-plus-circle"></i> Submit Complaint
+                    </a>
+                </div>
+            }
+            else
+            {
+                <div class="cd-table-wrapper">
+                    <table class="cd-table">
+                        <thead>
+                            <tr>
+                                <th>Complaint #</th>
+                                <th>Title</th>
+                                <th>Category</th>
+                                <th>Status</th>
+                                <th>SLA</th>
+                                <th>Submitted</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in Stats.RecentComplaints)
+                            {
+                                <tr class="cd-table-row @(c.IsSlaBreached ? "sla-breached-row" : "")">
+                                    <td><span class="cd-complaint-number">@c.ComplaintNumber</span></td>
+                                    <td>
+                                        <span class="cd-complaint-title-cell" title="@c.Title">
+                                            @TruncateTitle(c.Title, 45)
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="cd-category-chip" style="background: @GetCategoryColor(c.CategoryName)20; color: @GetCategoryColor(c.CategoryName)">
+                                            @c.CategoryName
+                                        </span>
+                                    </td>
+                                    <td><StatusBadge Status="@c.Status" /></td>
+                                    <td><SlaProgressBar SlaDeadline="@c.SlaDeadline" CreatedAt="@c.CreatedAt" /></td>
+                                    <td><span class="cd-date">@c.CreatedAt.ToString("MMM dd")</span></td>
+                                    <td>
+                                        <a href="/citizen/complaints/@c.Id" class="cd-view-btn">
+                                            View Details <i class="bi bi-chevron-right"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div class="cd-bottom-grid">
+
+            <div class="cd-card">
+                <div class="cd-card-header">
+                    <h2 class="cd-card-title">
+                        <i class="bi bi-bell"></i>
+                        Recent Notifications
+                    </h2>
+                    <a href="/citizen/notifications" class="cd-view-all-btn">
+                        View All <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+                @if (Stats.UnreadNotificationCount > 0)
+                {
+                    <div style="padding: 18px 22px;">
+                        <p style="font-size:14px;font-weight:600;color:#1A202C;margin:0;">
+                            You have <span style="color:#2563EB;">@Stats.UnreadNotificationCount</span> unread notification@(Stats.UnreadNotificationCount != 1 ? "s" : "").
+                        </p>
+                    </div>
+                }
+                else
+                {
+                    <div class="cd-empty-notifications">
+                        <div class="cd-notif-empty-icon">🔔</div>
+                        <p>No notifications yet</p>
+                        <span>You're all caught up!</span>
+                    </div>
+                }
+            </div>
+
+            <div class="cd-card">
+                <div class="cd-card-header">
+                    <h2 class="cd-card-title">
+                        <i class="bi bi-lightning-charge"></i>
+                        Quick Actions
+                    </h2>
+                </div>
+                <div class="cd-quick-actions">
+                    <a href="/citizen/submit" class="cd-action-btn primary">
+                        <i class="bi bi-plus-circle-fill"></i>
+                        <div>
+                            <span class="cd-action-title">Submit Complaint</span>
+                            <span class="cd-action-sub">Report a new urban issue</span>
+                        </div>
+                    </a>
+                    <a href="/citizen/complaints" class="cd-action-btn secondary">
+                        <i class="bi bi-card-list"></i>
+                        <div>
+                            <span class="cd-action-title">My Complaints</span>
+                            <span class="cd-action-sub">Track all your complaints</span>
+                        </div>
+                    </a>
+                    <a href="/citizen/notifications" class="cd-action-btn secondary">
+                        <i class="bi bi-bell"></i>
+                        <div>
+                            <span class="cd-action-title">Notifications</span>
+                            <span class="cd-action-sub">View all notifications</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+        </div>
+    }
+</div>
+
+@code {
+    private CitizenDashboardDto Stats = new();
+    private List<ComplaintDto> complaintsNeedingFeedback = new();
+    private bool IsLoading = true;
+    private string FullName = "";
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        FullName = user.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "User";
+
+        var userIdClaim = user.FindFirst("userId")?.Value;
+        if (userIdClaim != null)
+        {
+            var userId = int.Parse(userIdClaim);
+            Stats = await ComplaintService.GetCitizenDashboardStatsAsync(userId);
+
+            complaintsNeedingFeedback = (await ComplaintService
+                .GetByCitizenAsync(userId, new ComplaintFilterDto
+                {
+                    Status = "Resolved",
+                    PageSize = 5
+                }))
+                .Items
+                .Where(c => !c.HasFeedback)
+                .ToList();
+        }
+
+        IsLoading = false;
+    }
+
+    private string TruncateTitle(string title, int maxLength)
+    {
+        if (string.IsNullOrEmpty(title)) return "";
+        return title.Length <= maxLength ? title : title.Substring(0, maxLength) + "...";
+    }
+
+    private string GetCategoryColor(string categoryName) => categoryName?.ToLower() switch
+    {
+        var s when s?.Contains("road") == true => "#EA580C",
+        var s when s?.Contains("water") == true => "#2563EB",
+        var s when s?.Contains("electric") == true => "#D97706",
+        var s when s?.Contains("waste") == true => "#16A34A",
+        var s when s?.Contains("light") == true => "#7C3AED",
+        var s when s?.Contains("sewer") == true => "#0891B2",
+        var s when s?.Contains("park") == true => "#15803D",
+        var s when s?.Contains("building") == true => "#DC2626",
+        var s when s?.Contains("noise") == true => "#9333EA",
+        var s when s?.Contains("encroach") == true => "#B45309",
+        _ => "#6B7280"
+    };
+}

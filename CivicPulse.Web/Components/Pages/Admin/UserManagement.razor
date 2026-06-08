@@ -1,0 +1,425 @@
+@page "/admin/users"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@inject IUserService UserService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="um-page">
+
+    <!-- PAGE HEADER -->
+    <div class="um-header">
+        <div>
+            <h1 class="um-page-title">
+                <svg class="um-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                </svg>
+                User Management
+            </h1>
+            <p class="um-page-sub">Manage citizen and admin accounts</p>
+        </div>
+        <button class="um-add-btn" @onclick="OpenAddUserModal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add User
+        </button>
+    </div>
+
+    <!-- STATS ROW -->
+    <div class="um-stats-row">
+        <div class="um-stat">
+            <span class="um-stat-num">@users.Count</span>
+            <span class="um-stat-label">Total Users</span>
+        </div>
+        <div class="um-stat">
+            <span class="um-stat-num" style="color:#16A34A">@users.Count(u => u.IsActive)</span>
+            <span class="um-stat-label">Active</span>
+        </div>
+        <div class="um-stat">
+            <span class="um-stat-num" style="color:#6B7280">@users.Count(u => !u.IsActive)</span>
+            <span class="um-stat-label">Disabled</span>
+        </div>
+        <div class="um-stat">
+            <span class="um-stat-num" style="color:#1B3A6B">@users.Count(u => u.Role == UserRole.Admin)</span>
+            <span class="um-stat-label">Admins</span>
+        </div>
+        <div class="um-stat">
+            <span class="um-stat-num" style="color:#2563EB">@users.Count(u => u.Role == UserRole.Citizen)</span>
+            <span class="um-stat-label">Citizens</span>
+        </div>
+    </div>
+
+    <!-- FILTER BAR -->
+    <div class="um-filter-bar">
+        <div class="um-search-wrap">
+            <svg class="um-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input class="um-search-input"
+                   type="text"
+                   placeholder="Search by name or email..."
+                   autocomplete="off"
+                   @bind="searchTerm"
+                   @bind:event="oninput"
+                   @bind:after="ApplyFilter" />
+        </div>
+
+        <FilterDropdown Open="@_roleOpen"
+                        OpenChanged="(bool v) => _roleOpen = v"
+                        Placeholder="Role"
+                        AllLabel="Roles"
+                        SelectedValue="@roleFilter"
+                        SelectedLabel="@roleFilter"
+                        Options="@RoleOptions"
+                        OnSelectionChanged="OnRoleFilterChanged"
+                        IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><path d='M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2'/><circle cx='9' cy='7' r='4'/></svg>" />
+
+        <FilterDropdown Open="@_statusOpen"
+                        OpenChanged="(bool v) => _statusOpen = v"
+                        Placeholder="Status"
+                        AllLabel="Status"
+                        SelectedValue="@statusFilter"
+                        SelectedLabel="@GetStatusFilterLabel(statusFilter)"
+                        Options="@StatusFilterOptions"
+                        OnSelectionChanged="OnStatusFilterChanged"
+                        IconSvg="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' width='13' height='13'><polygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'/></svg>" />
+
+        <button class="um-search-btn" @onclick="ApplyFilter">Search</button>
+        <button class="um-clear-btn" @onclick="ClearFilters">Clear</button>
+    </div>
+
+    <!-- TABLE -->
+    @if (isLoading)
+    {
+        <div class="um-card">
+            @for (int i = 0; i < 5; i++)
+            {
+                <div class="um-skeleton-row">
+                    <div class="skeleton um-sk-avatar"></div>
+                    <div style="flex:1;display:flex;flex-direction:column;gap:5px">
+                        <div class="skeleton" style="height:13px;width:140px;"></div>
+                        <div class="skeleton" style="height:11px;width:200px;"></div>
+                    </div>
+                    <div class="skeleton" style="height:13px;width:120px;"></div>
+                    <div class="skeleton" style="height:24px;width:70px;border-radius:20px;"></div>
+                    <div class="skeleton" style="height:24px;width:55px;border-radius:20px;"></div>
+                    <div class="skeleton" style="height:13px;width:80px;"></div>
+                    <div class="skeleton" style="height:32px;width:80px;border-radius:8px;"></div>
+                </div>
+            }
+        </div>
+    }
+    else if (!filteredUsers.Any())
+    {
+        <div class="um-empty">
+            <svg viewBox="0 0 80 80" fill="none" width="80" height="80">
+                <circle cx="40" cy="40" r="38" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="2"/>
+                <path d="M28 52v-2a8 8 0 018-8h8a8 8 0 018 8v2" stroke="#93C5FD" stroke-width="2.5" stroke-linecap="round"/>
+                <circle cx="40" cy="30" r="6" stroke="#93C5FD" stroke-width="2.5"/>
+            </svg>
+            <h3>No users found</h3>
+            <p>Try adjusting your search or filters</p>
+        </div>
+    }
+    else
+    {
+        <div class="um-card um-table-card">
+            <table class="um-table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Registered</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in filteredUsers)
+                    {
+                        <tr class="um-row @(user.IsActive ? "" : "um-row-disabled")">
+                            <td>
+                                <div class="um-user-cell">
+                                    <div class="um-avatar" style="--avatar-color: @GetRoleColor(user.Role)">
+                                        @(user.FullName?.Length > 0 ? user.FullName[0].ToString().ToUpper() : "?")
+                                    </div>
+                                    <div class="um-user-info">
+                                        <span class="um-user-name">@user.FullName</span>
+                                        @if (!user.IsActive)
+                                        {
+                                            <span class="um-disabled-tag">Disabled</span>
+                                        }
+                                    </div>
+                                </div>
+                            </td>
+                            <td><span class="um-email">@user.Email</span></td>
+                            <td><span class="um-phone">@(user.PhoneNumber ?? "—")</span></td>
+                            <td>
+                                <span class="um-role-badge um-role-@user.Role.ToString().ToLower()">
+                                    @GetRoleLabel(user.Role)
+                                </span>
+                            </td>
+                            <td>
+                                <span class="um-status-badge @(user.IsActive ? "um-active" : "um-inactive")">
+                                    <span class="um-status-dot"></span>
+                                    @(user.IsActive ? "Active" : "Disabled")
+                                </span>
+                            </td>
+                            <td>
+                                <span class="um-date">@user.CreatedAt.ToString("MMM dd, yyyy")</span>
+                            </td>
+                            <td>
+                                <div class="um-actions">
+                                    <button class="um-action-btn um-view-complaints"
+                                            @onclick="() => ViewComplaints(user.Id)"
+                                            title="View complaints">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                            <polyline points="14 2 14 8 20 8"/>
+                                        </svg>
+                                        Complaints
+                                    </button>
+                                    @if (user.IsActive)
+                                    {
+                                        <button class="um-action-btn um-disable-btn"
+                                                @onclick="() => DisableUser(user.Id)"
+                                                title="Disable user">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                                <circle cx="12" cy="12" r="10"/>
+                                                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                                            </svg>
+                                            Disable
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="um-action-btn um-enable-btn"
+                                                @onclick="() => EnableUser(user.Id)"
+                                                title="Enable user">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                                <polyline points="20 6 9 17 4 12"/>
+                                            </svg>
+                                            Enable
+                                        </button>
+                                    }
+                                    <button class="um-action-btn um-reset-btn"
+                                            @onclick="() => ResetPassword(user.Id)"
+                                            title="Reset password">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                                        </svg>
+                                        Reset Pwd
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (ShowCreate)
+{
+    <div class="cp-modal-overlay" @onclick="() => ShowCreate = false">
+        <div class="cp-modal" @onclick:stopPropagation>
+            <div class="cp-modal-header">
+                <span>Create User</span>
+                <button class="cp-modal-close" @onclick="() => ShowCreate = false">&times;</button>
+            </div>
+            <div class="cp-form-group">
+                <label class="cp-form-label">Full Name</label>
+                <input class="cp-input" @bind="NewFullName" />
+            </div>
+            <div class="cp-form-group">
+                <label class="cp-form-label">Email</label>
+                <input class="cp-input" @bind="NewEmail" type="email" />
+            </div>
+            <div class="cp-form-group">
+                <label class="cp-form-label">Password</label>
+                <input class="cp-input" @bind="NewPassword" type="password" />
+            </div>
+            <div class="cp-form-group">
+                <label class="cp-form-label">Role</label>
+                <select class="cp-select" @bind="NewRole">
+                    <option value="Admin">Admin</option>
+                    <option value="Citizen">Citizen</option>
+                </select>
+            </div>
+            <div class="cp-modal-footer">
+                <button class="cp-btn cp-btn-secondary" @onclick="() => ShowCreate = false">Cancel</button>
+                <button class="cp-btn cp-btn-primary" @onclick="CreateUser">Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowReset)
+{
+    <div class="cp-modal-overlay" @onclick="() => ShowReset = false">
+        <div class="cp-modal" @onclick:stopPropagation>
+            <div class="cp-modal-header">
+                <span>Reset Password</span>
+                <button class="cp-modal-close" @onclick="() => ShowReset = false">&times;</button>
+            </div>
+            <div class="cp-form-group">
+                <label class="cp-form-label">New Password</label>
+                <input class="cp-input" @bind="NewResetPassword" type="password" />
+            </div>
+            <div class="cp-modal-footer">
+                <button class="cp-btn cp-btn-secondary" @onclick="() => ShowReset = false">Cancel</button>
+                <button class="cp-btn cp-btn-primary" @onclick="DoResetPassword">Reset</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<UserDto> users = new();
+    private List<UserDto> filteredUsers = new();
+    private string searchTerm = "";
+    private string? roleFilter;
+    private string? statusFilter;
+    private bool isLoading = true;
+    private bool ShowCreate;
+    private bool ShowReset;
+    private int ResetUserId;
+    private string NewFullName = "", NewEmail = "", NewPassword = "Temp@123", NewRole = "Citizen", NewResetPassword = "Temp@123";
+    private bool _roleOpen;
+    private bool _statusOpen;
+
+    private List<DropdownOption> RoleOptions { get; set; } = new()
+    {
+        new() { Value = "Citizen", Label = "Citizen", Color = "#0891B2" },
+        new() { Value = "Admin", Label = "Admin", Color = "#1B3A6B" },
+    };
+
+    private List<DropdownOption> StatusFilterOptions { get; set; } = new()
+    {
+        new() { Value = "active", Label = "Active", Color = "#16A34A" },
+        new() { Value = "disabled", Label = "Disabled", Color = "#9CA3AF" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        var result = await UserService.GetAllAsync(1, 1000);
+        users = result.Items.ToList();
+        ApplyFilterInternal();
+        isLoading = false;
+    }
+
+    private void ApplyFilter()
+    {
+        ApplyFilterInternal();
+    }
+
+    private void ApplyFilterInternal()
+    {
+        var query = users.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var term = searchTerm.ToLower();
+            query = query.Where(u =>
+                (u.FullName?.ToLower().Contains(term) ?? false) ||
+                (u.Email?.ToLower().Contains(term) ?? false));
+        }
+
+        if (!string.IsNullOrEmpty(roleFilter))
+        {
+            var role = Enum.Parse<UserRole>(roleFilter);
+            query = query.Where(u => u.Role == role);
+        }
+
+        if (!string.IsNullOrEmpty(statusFilter))
+        {
+            var active = statusFilter == "active";
+            query = query.Where(u => u.IsActive == active);
+        }
+
+        filteredUsers = query.ToList();
+    }
+
+    private void OnRoleFilterChanged(string? value) { roleFilter = value; ApplyFilter(); }
+    private void OnStatusFilterChanged(string? value) { statusFilter = value; ApplyFilter(); }
+
+    private string GetStatusFilterLabel(string? status) => status switch
+    {
+        "active" => "Active",
+        "disabled" => "Disabled",
+        _ => ""
+    };
+
+    private void ClearFilters()
+    {
+        searchTerm = "";
+        roleFilter = null;
+        statusFilter = null;
+        ApplyFilterInternal();
+    }
+
+    private void OpenAddUserModal()
+    {
+        ShowCreate = true;
+    }
+
+    private async Task CreateUser()
+    {
+        ShowCreate = false;
+        await LoadData();
+    }
+
+    private async Task DisableUser(int userId)
+    {
+        await UserService.ToggleUserStatusAsync(userId);
+        await LoadData();
+    }
+
+    private async Task EnableUser(int userId)
+    {
+        await UserService.ToggleUserStatusAsync(userId);
+        await LoadData();
+    }
+
+    private void ResetPassword(int userId)
+    {
+        ResetUserId = userId;
+        ShowReset = true;
+    }
+
+    private async Task DoResetPassword()
+    {
+        await UserService.ResetPasswordAsync(ResetUserId, NewResetPassword);
+        ShowReset = false;
+    }
+
+    private string GetRoleLabel(UserRole role) => role switch
+    {
+        UserRole.Admin => "Admin",
+        UserRole.Citizen => "Citizen",
+        _ => role.ToString()
+    };
+
+    private string GetRoleColor(UserRole role) => role switch
+    {
+        UserRole.Admin => "#1B3A6B",
+        UserRole.Citizen => "#0891B2",
+        _ => "#6B7280"
+    };
+
+    private void ViewComplaints(int userId) =>
+        Navigation.NavigateTo($"/admin/complaints?citizenId={userId}");
+}

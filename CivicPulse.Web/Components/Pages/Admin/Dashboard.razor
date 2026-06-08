@@ -1,0 +1,490 @@
+@page "/admin/dashboard"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@inject IAnalyticsService AnalyticsService
+@inject IComplaintService ComplaintService
+@inject INotificationService NotificationService
+@inject IFeedbackService FeedbackService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+@implements IAsyncDisposable
+
+<div class="ad-page">
+
+    <div class="ad-page-header">
+        <div>
+            <h1 class="ad-page-title">Admin Dashboard</h1>
+            <p class="ad-page-sub">Overview of all complaints and system performance</p>
+        </div>
+        <div class="ad-header-right">
+            <span class="ad-last-updated">
+                <i class="bi bi-arrow-clockwise"></i>
+                Updated just now
+            </span>
+        </div>
+    </div>
+
+    @if (IsLoading)
+    {
+        <div class="ad-stats-grid">
+            @for (int i = 0; i < 6; i++)
+            {
+                <div class="ad-stat-card" style="padding:24px;min-height:110px">
+                    <div style="width:42px;height:42px;border-radius:11px;background:#E2E8F0"></div>
+                    <div style="height:28px;width:60%;background:#F1F5F9;border-radius:6px"></div>
+                    <div style="height:12px;width:40%;background:#F8FAFC;border-radius:4px"></div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="ad-stats-grid">
+            <div class="ad-stat-card">
+                <div class="ad-stat-icon" style="background:#EFF6FF;color:#1B3A6B">
+                    <i class="bi bi-clipboard2-data-fill"></i>
+                </div>
+                <div class="ad-stat-body">
+                    <span class="ad-stat-number">@Stats.TotalComplaints</span>
+                    <span class="ad-stat-label">Total Complaints</span>
+                </div>
+                <div class="ad-stat-trend neutral">All time</div>
+            </div>
+
+            <div class="ad-stat-card">
+                <div class="ad-stat-icon" style="background:#FFFBEB;color:#D97706">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+                <div class="ad-stat-body">
+                    <span class="ad-stat-number" style="color:#D97706">@Stats.PendingCount</span>
+                    <span class="ad-stat-label">Pending</span>
+                </div>
+                <div class="ad-stat-trend warning">Needs attention</div>
+            </div>
+
+            <div class="ad-stat-card">
+                <div class="ad-stat-icon" style="background:#EFF6FF;color:#2563EB">
+                    <i class="bi bi-arrow-repeat"></i>
+                </div>
+                <div class="ad-stat-body">
+                    <span class="ad-stat-number" style="color:#2563EB">@Stats.InProgressCount</span>
+                    <span class="ad-stat-label">In Progress</span>
+                </div>
+                <div class="ad-stat-trend info">Active</div>
+            </div>
+
+            <div class="ad-stat-card">
+                <div class="ad-stat-icon" style="background:#F0FDF4;color:#16A34A">
+                    <i class="bi bi-check-circle-fill"></i>
+                </div>
+                <div class="ad-stat-body">
+                    <span class="ad-stat-number" style="color:#16A34A">@Stats.ResolvedCount</span>
+                    <span class="ad-stat-label">Resolved</span>
+                </div>
+                <div class="ad-stat-trend success">Completed</div>
+            </div>
+
+            <div class="ad-stat-card">
+                <div class="ad-stat-icon" style="background:#FEF2F2;color:#DC2626">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                </div>
+                <div class="ad-stat-body">
+                    <span class="ad-stat-number" style="color:#DC2626">@Stats.SlaBreachedCount</span>
+                    <span class="ad-stat-label">SLA Breached</span>
+                </div>
+                <div class="ad-stat-trend danger">Overdue</div>
+            </div>
+
+            <div class="ad-stat-card">
+                <div class="ad-stat-icon" style="background:#F5F3FF;color:#7C3AED">
+                    <i class="bi bi-clock-fill"></i>
+                </div>
+                <div class="ad-stat-body">
+                    <span class="ad-stat-number" style="color:#7C3AED">@Stats.AverageResolutionDays.ToString("F1")d</span>
+                    <span class="ad-stat-label">Avg. Resolution</span>
+                </div>
+                <div class="ad-stat-trend neutral">Average</div>
+            </div>
+        </div>
+
+        <div class="ad-charts-row">
+            <div class="ad-card ad-chart-card">
+                <div class="ad-card-header">
+                    <h2 class="ad-card-title">
+                        <i class="bi bi-pie-chart-fill"></i>
+                        Complaints by Status
+                    </h2>
+                </div>
+                <div class="ad-chart-body">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+
+            <div class="ad-card ad-chart-card">
+                <div class="ad-card-header">
+                    <h2 class="ad-card-title">
+                        <i class="bi bi-graph-up-arrow"></i>
+                        Monthly Trend
+                    </h2>
+                </div>
+                <div class="ad-chart-body">
+                    <canvas id="monthlyChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="ad-charts-row">
+            <div class="ad-card ad-chart-card">
+                <div class="ad-card-header">
+                    <h2 class="ad-card-title">
+                        <i class="bi bi-bar-chart-fill"></i>
+                        Top Categories
+                    </h2>
+                </div>
+                <div class="ad-chart-body">
+                    <canvas id="categoriesChart"></canvas>
+                </div>
+            </div>
+
+            <div class="ad-card ad-chart-card">
+                <div class="ad-card-header">
+                    <h2 class="ad-card-title">
+                        <i class="bi bi-bullseye"></i>
+                        Priority Distribution
+                    </h2>
+                </div>
+                <div class="ad-chart-body">
+                    <canvas id="priorityChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="ad-nav-grid">
+            <a href="/admin/complaints" class="ad-nav-card">
+                <div class="ad-nav-icon" style="background:#EFF6FF;color:#1B3A6B">
+                    <i class="bi bi-clipboard2-data-fill"></i>
+                </div>
+                <div class="ad-nav-body">
+                    <span class="ad-nav-title">Manage Complaints</span>
+                    <span class="ad-nav-desc">View and manage all citizen complaints</span>
+                </div>
+                <i class="bi bi-chevron-right ad-nav-arrow"></i>
+            </a>
+            <a href="/admin/sla" class="ad-nav-card">
+                <div class="ad-nav-icon" style="background:#FEF2F2;color:#DC2626">
+                    <i class="bi bi-alarm-fill"></i>
+                </div>
+                <div class="ad-nav-body">
+                    <span class="ad-nav-title">SLA Tracking</span>
+                    <span class="ad-nav-desc">Monitor service level agreements</span>
+                </div>
+                <i class="bi bi-chevron-right ad-nav-arrow"></i>
+            </a>
+            <a href="/admin/users" class="ad-nav-card">
+                <div class="ad-nav-icon" style="background:#F0FDF4;color:#16A34A">
+                    <i class="bi bi-people-fill"></i>
+                </div>
+                <div class="ad-nav-body">
+                    <span class="ad-nav-title">User Management</span>
+                    <span class="ad-nav-desc">Manage citizens and staff accounts</span>
+                </div>
+                <i class="bi bi-chevron-right ad-nav-arrow"></i>
+            </a>
+            <a href="/admin/categories" class="ad-nav-card">
+                <div class="ad-nav-icon" style="background:#F5F3FF;color:#7C3AED">
+                    <i class="bi bi-tags-fill"></i>
+                </div>
+                <div class="ad-nav-body">
+                    <span class="ad-nav-title">Categories</span>
+                    <span class="ad-nav-desc">Configure complaint categories</span>
+                </div>
+                <i class="bi bi-chevron-right ad-nav-arrow"></i>
+            </a>
+            <a href="/admin/feedback" class="ad-nav-card">
+                <div class="ad-nav-icon" style="background:#FFFBEB;color:#D97706">
+                    <i class="bi bi-chat-square-text-fill"></i>
+                </div>
+                <div class="ad-nav-body">
+                    <span class="ad-nav-title">Feedback Management</span>
+                    <span class="ad-nav-desc">View citizen ratings and comments</span>
+                </div>
+                <i class="bi bi-chevron-right ad-nav-arrow"></i>
+            </a>
+            <a href="/admin/audit" class="ad-nav-card">
+                <div class="ad-nav-icon" style="background:#F1F5F9;color:#475569">
+                    <i class="bi bi-journal-text"></i>
+                </div>
+                <div class="ad-nav-body">
+                    <span class="ad-nav-title">Audit Log</span>
+                    <span class="ad-nav-desc">Track all system activities</span>
+                </div>
+                <i class="bi bi-chevron-right ad-nav-arrow"></i>
+            </a>
+        </div>
+
+        <div class="ad-card ad-feedback-overview">
+            <div class="ad-card-header">
+                <h2 class="ad-card-title">
+                    <i class="bi bi-star-fill" style="color:#F59E0B"></i>
+                    Recent Feedbacks
+                </h2>
+                <a href="/admin/feedback" class="ad-view-all">View All →</a>
+            </div>
+            @if (!FeedbackItems.Any())
+            {
+                <div class="ad-empty-small">
+                    <i class="bi bi-chat-square-text" style="color:#94A3B8;font-size:1.8rem"></i>
+                <p>No feedback available for resolved complaints.</p>
+            </div>
+        }
+        else
+        {
+            <div class="ad-feedback-table-wrap">
+                    <table class="ad-feedback-table">
+                        <thead>
+                            <tr>
+                                <th>Citizen</th>
+                                <th>Complaint</th>
+                                <th>Rating</th>
+                                <th>Comment</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var fb in FeedbackItems.Take(5))
+                            {
+                                <tr class="ad-feedback-row" @onclick="() => NavigateToComplaint(fb.ComplaintId)">
+                                    <td><span class="ad-fb-citizen">@fb.CitizenName</span></td>
+                                    <td><span class="ad-fb-ref">@fb.ComplaintNumber</span></td>
+                                    <td>
+                                        <span class="ad-fb-stars">
+                                            @for (int s = 1; s <= 5; s++)
+                                            {
+                                                if (s <= fb.Rating)
+                                                {
+                                                    <svg viewBox="0 0 20 20" width="16" height="16" fill="#F59E0B"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                                }
+                                                else
+                                                {
+                                                    <svg viewBox="0 0 20 20" width="16" height="16" fill="#D1D5DB"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                                }
+                                            }
+                                        </span>
+                                    </td>
+                                    <td><span class="ad-fb-comment" title="@fb.Comment">@TruncateTitle(fb.Comment, 60)</span></td>
+                                    <td><span class="ad-fb-date">@fb.CreatedAt.ToString("MMM dd, yyyy")</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div class="ad-card">
+            <div class="ad-card-header">
+                <h2 class="ad-card-title">
+                    <i class="bi bi-map-fill"></i>
+                    Complaint Heatmap
+                </h2>
+                <div class="ad-heatmap-legend">
+                    <span class="ad-legend-dot" style="background:#DC2626"></span> Critical
+                    <span class="ad-legend-dot" style="background:#EA580C"></span> High
+                    <span class="ad-legend-dot" style="background:#D97706"></span> Medium
+                    <span class="ad-legend-dot" style="background:#16A34A"></span> Low
+                </div>
+            </div>
+            <div class="ad-heatmap-container" id="admin-heatmap"></div>
+        </div>
+
+        <div class="ad-bottom-row">
+            <div class="ad-card">
+                <div class="ad-card-header">
+                    <h2 class="ad-card-title ad-danger-title">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        SLA Breached Complaints
+                    </h2>
+                    <a href="/admin/sla" class="ad-view-all">View All →</a>
+                </div>
+
+                @if (!SlaBreached.Any())
+                {
+                    <div class="ad-empty-small">
+                        <i class="bi bi-check-circle-fill" style="color:#16A34A;font-size:1.8rem"></i>
+                        <p>No SLA breaches — great work!</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ad-sla-list">
+                        @foreach (var c in SlaBreached.Take(5))
+                        {
+                            <div class="ad-sla-item">
+                                <div class="ad-sla-left">
+                                    <span class="ad-sla-num">@c.ComplaintNumber</span>
+                                    <span class="ad-sla-title" title="@c.Title">
+                                        @TruncateTitle(c.Title, 40)
+                                    </span>
+                                </div>
+                                <div class="ad-sla-right">
+                                    <span class="ad-sla-badge">
+                                        <i class="bi bi-alarm-fill"></i> SLA Breached
+                                    </span>
+                                    <a href="/admin/complaints/@c.Id" class="ad-sla-view">View</a>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="ad-card">
+                <div class="ad-card-header">
+                    <h2 class="ad-card-title">
+                        <i class="bi bi-activity"></i>
+                        Recent Activity
+                    </h2>
+                </div>
+                <div class="ad-activity-list">
+                    @foreach (var c in RecentComplaints.Take(6))
+                    {
+                        <div class="ad-activity-item">
+                            <div class="ad-activity-dot ad-status-@GetStatusClass(c.Status)"></div>
+                            <div class="ad-activity-body">
+                                <span class="ad-activity-num">@c.ComplaintNumber</span>
+                                <span class="ad-activity-title" title="@c.Title">
+                                    @TruncateTitle(c.Title, 30)
+                                </span>
+                            </div>
+                            <div class="ad-activity-right">
+                                <span class="ad-status-chip ad-status-@GetStatusClass(c.Status)">
+                                    @GetStatusLabel(c.Status)
+                                </span>
+                                <span class="ad-activity-time">@GetRelativeTime(c.CreatedAt)</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private AdminDashboardStatsDto Stats = new();
+    private List<AreaHeatmapDto> HeatmapData = new();
+    private List<ComplaintDto> SlaBreached = new();
+    private List<ComplaintDto> RecentComplaints = new();
+    private List<CategoryBreakdownDto> CategoryBreakdown = new();
+    private List<MonthlyTrendDto> MonthlyTrend = new();
+    private List<PriorityDistributionDto> PriorityDist = new();
+    private List<FeedbackDto> FeedbackItems = new();
+    private bool IsLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+        Stats = await AnalyticsService.GetAdminStatsAsync();
+        HeatmapData = await AnalyticsService.GetComplaintsByAreaAsync();
+        SlaBreached = await ComplaintService.GetSlaBreachedAsync();
+        RecentComplaints = await ComplaintService.GetRecentComplaintsAsync(10);
+        CategoryBreakdown = await AnalyticsService.GetComplaintsByCategoryAsync();
+        MonthlyTrend = await AnalyticsService.GetMonthlyTrendAsync(12);
+        PriorityDist = await AnalyticsService.GetPriorityDistributionAsync();
+        await LoadFeedbackAsync();
+        IsLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !IsLoading)
+        {
+            await JS.InvokeVoidAsync("CivicCharts.renderDonut", "statusChart",
+                new[] { "Pending", "InProgress", "Resolved", "Closed", "Rejected" },
+                new[] { Stats.PendingCount, Stats.InProgressCount, Stats.ResolvedCount, 0, 0 },
+                new[] { "#F59E0B", "#3B82F6", "#10B981", "#6B7280", "#EF4444" },
+                "");
+
+            var trendLabels = MonthlyTrend.Select(m => m.Month).ToArray();
+            var trendData = MonthlyTrend.Select(m => m.Count).ToArray();
+            await JS.InvokeVoidAsync("CivicCharts.renderLine", "monthlyChart",
+                trendLabels,
+                new[] { new { label = "Complaints", data = trendData, borderColor = "#1B3A6B", backgroundColor = "rgba(27,58,107,0.1)", fill = true } },
+                "");
+
+            var catLabels = CategoryBreakdown.Select(c => c.CategoryName).ToArray();
+            var catData = CategoryBreakdown.Select(c => c.Count).ToArray();
+            var catColors = CategoryBreakdown.Select(c => c.ColorHex).ToArray();
+            await JS.InvokeVoidAsync("CivicCharts.renderHorizontalBar", "categoriesChart",
+                catLabels, catData, catColors, "");
+
+            var priLabels = PriorityDist.Select(p => p.Priority).ToArray();
+            var priData = PriorityDist.Select(p => p.Count).ToArray();
+            var priColors = new[] { "#DC2626", "#EA580C", "#D97706", "#65A30D" };
+            await JS.InvokeVoidAsync("CivicCharts.renderDonut", "priorityChart",
+                priLabels, priData, priColors, "");
+
+            await JS.InvokeVoidAsync("CivicMap.initHeatmap", "admin-heatmap",
+                HeatmapData.Select(h => new
+                {
+                    latitude = h.Latitude, longitude = h.Longitude, priority = h.Priority,
+                    complaintNumber = h.ComplaintNumber, categoryName = h.CategoryName, status = h.Status
+                }).ToArray());
+        }
+    }
+
+    private void NavigateToComplaint(int id) => Navigation.NavigateTo($"/admin/complaints/{id}");
+
+    private string TruncateTitle(string title, int max) =>
+        string.IsNullOrEmpty(title) ? "" :
+        title.Length <= max ? title : title.Substring(0, max) + "...";
+
+    private string GetStatusClass(ComplaintStatus s) => s switch
+    {
+        ComplaintStatus.Pending => "pending",
+        ComplaintStatus.UnderReview => "review",
+        ComplaintStatus.InProgress => "inprogress",
+        ComplaintStatus.Resolved => "resolved",
+        ComplaintStatus.Closed => "closed",
+        ComplaintStatus.Rejected => "rejected",
+        _ => "pending"
+    };
+
+    private string GetStatusLabel(ComplaintStatus s) => s switch
+    {
+        ComplaintStatus.Pending => "Pending",
+        ComplaintStatus.UnderReview => "Under Review",
+        ComplaintStatus.InProgress => "In Progress",
+        ComplaintStatus.Resolved => "Resolved",
+        ComplaintStatus.Closed => "Closed",
+        ComplaintStatus.Rejected => "Rejected",
+        _ => s.ToString()
+    };
+
+    private string GetRelativeTime(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt;
+        if (diff.TotalMinutes < 1) return "Just now";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return dt.ToString("MMM dd");
+    }
+
+    private async Task LoadFeedbackAsync()
+    {
+        var result = await FeedbackService.GetAllPagedAsync(1, 5);
+        FeedbackItems = result.Items;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await JS.InvokeVoidAsync("CivicCharts.destroyChart", "statusChart");
+        await JS.InvokeVoidAsync("CivicCharts.destroyChart", "monthlyChart");
+        await JS.InvokeVoidAsync("CivicCharts.destroyChart", "categoriesChart");
+        await JS.InvokeVoidAsync("CivicCharts.destroyChart", "priorityChart");
+        await JS.InvokeVoidAsync("CivicMap.destroyMap", "admin-heatmap");
+    }
+}

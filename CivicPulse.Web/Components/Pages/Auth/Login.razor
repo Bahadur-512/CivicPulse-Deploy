@@ -1,0 +1,367 @@
+@page "/login"
+@layout AuthLayout
+@attribute [AllowAnonymous]
+@inject IJSRuntime JS
+
+
+<div class="auth-layout">
+    <div class="auth-brand">
+        <div class="auth-float"></div>
+        <div class="auth-float"></div>
+        <div class="auth-float"></div>
+        <div class="auth-float"></div>
+
+        <div class="auth-brand-icon"><i class="bi bi-building"></i></div>
+        <div class="auth-brand-name">Civic Pulse</div>
+        <div class="auth-brand-tagline">Your Voice. Your City.</div>
+
+        <svg class="auth-svg" width="200" height="120" viewBox="0 0 200 120">
+            <rect x="10" y="60" width="30" height="50" fill="white" rx="2"/>
+            <rect x="50" y="40" width="30" height="70" fill="white" rx="2"/>
+            <rect x="90" y="30" width="30" height="80" fill="white" rx="2"/>
+            <rect x="130" y="50" width="30" height="60" fill="white" rx="2"/>
+            <circle cx="25" cy="55" r="8" fill="white"/>
+            <circle cx="65" cy="35" r="8" fill="white"/>
+            <circle cx="105" cy="25" r="8" fill="white"/>
+        </svg>
+
+        <div class="auth-features">
+            <div class="auth-feature-pill"><i class="bi bi-shield-check"></i> Report Issues Instantly</div>
+            <div class="auth-feature-pill"><i class="bi bi-graph-up-arrow"></i> Real-Time Tracking</div>
+            <div class="auth-feature-pill"><i class="bi bi-clock-history"></i> SLA-Based Resolution</div>
+        </div>
+
+    </div>
+
+    <div class="auth-panel">
+        <div class="auth-wrap">
+            @if (activeTab == "login")
+            {
+                <div class="auth-tabs">
+                    <div class="auth-tab active" @onclick="GoToLoginTab">Log In</div>
+                    <div class="auth-tab" @onclick="GoToRegisterTab">Register</div>
+                </div>
+
+                <div class="auth-title">Welcome Back</div>
+                <div class="auth-subtitle">Sign in to your Civic Pulse account to manage your profile and track complaints.</div>
+
+                @if (!string.IsNullOrEmpty(Error))
+                {
+                    <div class="auth-alert auth-alert-danger"><i class="bi bi-exclamation-triangle-fill"></i> @Error</div>
+                }
+                @if (!string.IsNullOrEmpty(SuccessMessage))
+                {
+                    <div class="auth-alert auth-alert-success"><i class="bi bi-check-circle-fill"></i> @SuccessMessage</div>
+                }
+
+                <div class="auth-form-group">
+                    <label class="auth-label" for="loginEmail">Email</label>
+                    <div class="auth-input-wrapper">
+                        <i class="bi bi-envelope auth-input-icon"></i>
+                        <input id="loginEmail" type="email" placeholder="you@example.com" required autocomplete="email" @bind="LoginEmail" />
+                    </div>
+                </div>
+
+                <div class="auth-form-group">
+                    <label class="auth-label" for="loginPassword">Password</label>
+                    <div class="auth-input-wrapper">
+                        <i class="bi bi-lock auth-input-icon"></i>
+                        <input id="loginPassword" type="password" placeholder="Enter your password" required autocomplete="current-password" @bind="LoginPassword" />
+                        <button type="button" class="auth-pw-toggle" onclick="authTogglePw(this)" tabindex="-1" aria-label="Toggle password"><i class="bi bi-eye-slash"></i></button>
+                    </div>
+                </div>
+
+                <div class="auth-form-group">
+                    <div class="auth-flex auth-flex-center auth-flex-between">
+                        <label class="auth-flex auth-flex-center auth-gap-sm" style="cursor:pointer;font-size:13px;color:var(--cp-text-secondary);font-weight:600">
+                            <input id="rememberMe" type="checkbox" @bind="RememberMe" />
+                            Remember me
+                        </label>
+                        <a href="/forgot-password" style="font-size:12px;font-weight:600;color:var(--cp-accent)">Forgot password?</a>
+                    </div>
+                </div>
+
+                <button type="submit" class="auth-btn auth-btn-primary auth-btn-block" id="loginBtn" @onclick="HandleLoginSubmit">
+                    <span class="auth-btn-text">Log In</span>
+                </button>
+
+                
+            }
+
+            @if (activeTab == "register")
+            {
+                <div class="auth-tabs">
+                    <div class="auth-tab" @onclick="GoToLoginTab">Log In</div>
+                    <div class="auth-tab active" @onclick="GoToRegisterTab">Register</div>
+                </div>
+
+                <div class="auth-title">Create an Account</div>
+                <div class="auth-subtitle">Join Civic Pulse to report community issues and track resolutions in real time.</div>
+
+                @if (!string.IsNullOrEmpty(RegError))
+                {
+                    <div class="auth-alert auth-alert-danger"><i class="bi bi-exclamation-triangle-fill"></i> @RegError</div>
+                }
+
+                <div class="auth-form-group">
+                    <label class="auth-label" for="regFullName">Full Name</label>
+                    <div class="auth-input-wrapper">
+                        <i class="bi bi-person auth-input-icon"></i>
+                        <input id="regFullName" type="text" placeholder="John Doe" required autocomplete="name" @bind="RegFullName" />
+                    </div>
+                </div>
+
+                <div class="auth-form-group">
+                    <label class="auth-label" for="regEmail">Email</label>
+                    <div class="auth-input-wrapper">
+                        <i class="bi bi-envelope auth-input-icon"></i>
+                        <input id="regEmail" type="email" placeholder="john@example.com" required autocomplete="email" @bind="RegEmail" />
+                    </div>
+                </div>
+
+                <div class="auth-form-group">
+                    <label class="auth-label" for="regPhone">Phone</label>
+                    <div class="auth-input-wrapper">
+                        <i class="bi bi-telephone auth-input-icon"></i>
+                        <input id="regPhone" type="tel" placeholder="0300-1234567" autocomplete="tel" @bind="RegPhone" />
+                    </div>
+                </div>
+
+                <div class="auth-form-group">
+                    <label class="auth-label" for="regPassword">Password</label>
+                    <div class="auth-input-wrapper">
+                        <i class="bi bi-lock auth-input-icon"></i>
+                        <input id="regPassword" type="password" placeholder="Create a strong password" required autocomplete="new-password" @bind="RegPassword" @oninput="OnRegPasswordChange" />
+                        <button type="button" class="auth-pw-toggle" onclick="authTogglePw(this)" tabindex="-1" aria-label="Toggle password"><i class="bi bi-eye-slash"></i></button>
+                    </div>
+                    <div class="auth-strength">
+                        <div class="auth-strength-bar" data-idx="0"></div>
+                        <div class="auth-strength-bar" data-idx="1"></div>
+                        <div class="auth-strength-bar" data-idx="2"></div>
+                        <div class="auth-strength-bar" data-idx="3"></div>
+                    </div>
+                    <div class="auth-strength-text" id="regStrengthText"></div>
+                    <div class="auth-pw-requirements">
+                        <span class="auth-pw-req" data-req="length"><i class="bi bi-check-lg"></i> 8+ characters</span>
+                        <span class="auth-pw-req" data-req="upper"><i class="bi bi-check-lg"></i> Uppercase letter</span>
+                        <span class="auth-pw-req" data-req="number"><i class="bi bi-check-lg"></i> Number</span>
+                        <span class="auth-pw-req" data-req="special"><i class="bi bi-check-lg"></i> Special char</span>
+                    </div>
+                </div>
+
+                <div class="auth-form-group">
+                    <label class="auth-label" for="regConfirmPw">Confirm Password</label>
+                    <div class="auth-input-wrapper">
+                        <i class="bi bi-lock auth-input-icon"></i>
+                        <input id="regConfirmPw" type="password" placeholder="Repeat your password" required autocomplete="new-password" @bind="RegConfirmPw" @oninput="OnRegConfirmPwChange" />
+                        <button type="button" class="auth-pw-toggle" onclick="authTogglePw(this)" tabindex="-1" aria-label="Toggle password"><i class="bi bi-eye-slash"></i></button>
+                    </div>
+                    <div class="auth-field-error" id="regPwMatchError" style="@PwErrorStyle"><i class="bi bi-x-circle"></i> Passwords do not match</div>
+                </div>
+
+                <button type="submit" class="auth-btn auth-btn-accent auth-btn-block" id="registerBtn" @onclick="HandleRegisterSubmit">
+                    <span class="auth-btn-text">Submit</span>
+                </button>
+
+                <div class="auth-demo">
+                    <strong>Already have an account?</strong>
+                    <button type="button" class="auth-demo-fill" @onclick="GoToLoginTab">Sign in</button>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@* Hidden forms for POST submission to preserve cookie auth redirect flow *@
+<form action="/api/auth/login" method="post" class="auth-hidden-form" id="hiddenLoginForm">
+    <input type="hidden" name="Email" id="hiddenLoginEmail" />
+    <input type="hidden" name="Password" id="hiddenLoginPassword" />
+    <input type="hidden" name="RememberMe" id="hiddenLoginRemember" />
+</form>
+
+<form action="/api/auth/register" method="post" class="auth-hidden-form" id="hiddenRegisterForm">
+    <input type="hidden" name="FullName" id="hiddenRegFullName" />
+    <input type="hidden" name="Email" id="hiddenRegEmail" />
+    <input type="hidden" name="PhoneNumber" id="hiddenRegPhone" />
+    <input type="hidden" name="Password" id="hiddenRegPassword" />
+    <input type="hidden" name="ConfirmPassword" id="hiddenRegConfirmPw" />
+</form>
+
+<script>
+    function authTogglePw(btn) {
+        var input = btn.parentElement.querySelector('input');
+        var icon = btn.querySelector('i');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'bi bi-eye';
+        } else {
+            input.type = 'password';
+            icon.className = 'bi bi-eye-slash';
+        }
+    }
+
+    function authLoginSubmit(email, password, rememberMe) {
+        document.getElementById('hiddenLoginEmail').value = email;
+        document.getElementById('hiddenLoginPassword').value = password;
+        document.getElementById('hiddenLoginRemember').value = rememberMe;
+        document.getElementById('loginBtn').classList.add('auth-btn-loading');
+        document.getElementById('hiddenLoginForm').submit();
+    }
+
+    function authRegisterSubmit(fullName, email, phone, password, confirmPw) {
+        document.getElementById('hiddenRegFullName').value = fullName;
+        document.getElementById('hiddenRegEmail').value = email;
+        document.getElementById('hiddenRegPhone').value = phone;
+        document.getElementById('hiddenRegPassword').value = password;
+        document.getElementById('hiddenRegConfirmPw').value = confirmPw;
+        document.getElementById('registerBtn').classList.add('auth-btn-loading');
+        document.getElementById('hiddenRegisterForm').submit();
+    }
+
+    function authCheckStrength(val) {
+        var bars = document.querySelectorAll('.auth-strength-bar');
+        var text = document.getElementById('regStrengthText');
+        var reqs = {
+            length: val.length >= 8,
+            upper: /[A-Z]/.test(val),
+            number: /[0-9]/.test(val),
+            special: /[^A-Za-z0-9]/.test(val)
+        };
+        var score = Object.values(reqs).filter(Boolean).length;
+
+        Object.keys(reqs).forEach(function (key) {
+            var el = document.querySelector('[data-req="' + key + '"]');
+            if (el) { el.className = 'auth-pw-req' + (reqs[key] ? ' met' : ''); }
+        });
+
+        var levels = ['', 'weak', 'fair', 'good', 'strong'];
+        var colors = ['', 'fill-weak', 'fill-fair', 'fill-good', 'fill-strong'];
+        var labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+        bars.forEach(function (bar, i) {
+            bar.className = 'auth-strength-bar' + (i < score ? ' ' + colors[score] : '');
+        });
+        text.textContent = val ? labels[score] : '';
+        text.className = 'auth-strength-text' + (val ? ' ' + levels[score] : '');
+    }
+
+    function authCheckMatch() {
+        var pw = document.getElementById('regPassword').value;
+        var confirm = document.getElementById('regConfirmPw').value;
+        var err = document.getElementById('regPwMatchError');
+        if (confirm && confirm !== pw) {
+            err.style.display = 'flex';
+        } else {
+            err.style.display = 'none';
+        }
+    }
+</script>
+
+@code {
+    private string activeTab = "login";
+
+    // Login fields
+    private string LoginEmail = "";
+    private string LoginPassword = "";
+    private bool RememberMe = true;
+    private string Error = "";
+    private string SuccessMessage = "";
+
+    // Register fields
+    private string RegFullName = "";
+    private string RegEmail = "";
+    private string RegPhone = "";
+    private string RegPassword = "";
+    private string RegConfirmPw = "";
+    private string RegError = "";
+    private bool PwMismatch = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        var q = uri.Query.TrimStart('?');
+        if (!string.IsNullOrEmpty(q))
+        {
+            var pairs = q.Split('&').Select(p => p.Split('=', 2)).ToDictionary(p => p[0], p => Uri.UnescapeDataString(p[1]));
+            var errorVal = pairs.GetValueOrDefault("error", "");
+            var registeredVal = pairs.GetValueOrDefault("registered", "");
+            if (pairs.TryGetValue("tab", out var tab) && tab == "register")
+            {
+                if (string.IsNullOrEmpty(errorVal)) activeTab = "register";
+                RegError = errorVal;
+            }
+            else
+            {
+                Error = errorVal;
+            }
+            if (registeredVal == "true") SuccessMessage = "Registration successful! You can now log in with your credentials.";
+        }
+    }
+
+    private string PwErrorStyle => PwMismatch ? "display: flex" : "display: none";
+
+    private void GoToLoginTab() => SwitchTab("login");
+    private void GoToRegisterTab() => SwitchTab("register");
+
+    private void SwitchTab(string tab)
+    {
+        activeTab = tab;
+        Error = "";
+        RegError = "";
+        SuccessMessage = "";
+    }
+
+    private async Task HandleLoginSubmit()
+    {
+        Error = "";
+        SuccessMessage = "";
+        if (string.IsNullOrWhiteSpace(LoginEmail) || string.IsNullOrWhiteSpace(LoginPassword))
+        {
+            Error = "Please fill in all fields.";
+            return;
+        }
+        var remember = RememberMe ? "true" : "false";
+        await JS.InvokeVoidAsync("authLoginSubmit", LoginEmail, LoginPassword, remember);
+    }
+
+    private async Task HandleRegisterSubmit()
+    {
+        RegError = "";
+        PwMismatch = false;
+
+        if (string.IsNullOrWhiteSpace(RegFullName) || string.IsNullOrWhiteSpace(RegEmail) || string.IsNullOrWhiteSpace(RegPassword))
+        {
+            RegError = "Please fill in all required fields.";
+            return;
+        }
+        if (RegPassword != RegConfirmPw)
+        {
+            PwMismatch = true;
+            RegError = "Passwords do not match.";
+            return;
+        }
+        if (RegPassword.Length < 8)
+        {
+            RegError = "Password must be at least 8 characters.";
+            return;
+        }
+
+        await JS.InvokeVoidAsync("authRegisterSubmit", RegFullName, RegEmail, RegPhone ?? "", RegPassword, RegConfirmPw);
+    }
+
+    private async Task OnRegPasswordChange(ChangeEventArgs e)
+    {
+        RegPassword = e.Value?.ToString() ?? "";
+        PwMismatch = RegConfirmPw.Length > 0 && RegPassword != RegConfirmPw;
+        await JS.InvokeVoidAsync("authCheckStrength", RegPassword);
+        if (RegConfirmPw.Length > 0)
+            await JS.InvokeVoidAsync("authCheckMatch");
+    }
+
+    private async Task OnRegConfirmPwChange(ChangeEventArgs e)
+    {
+        RegConfirmPw = e.Value?.ToString() ?? "";
+        PwMismatch = RegConfirmPw.Length > 0 && RegPassword != RegConfirmPw;
+    }
+
+    [Inject] private NavigationManager NavigationManager { get; set; } = null!;
+}
