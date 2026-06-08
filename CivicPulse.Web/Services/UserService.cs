@@ -46,6 +46,13 @@ public class UserService : IUserService
         await _userRepo.AddAsync(user);
         await _userRepo.SaveChangesAsync();
 
+        // Send Welcome Email
+        await _email.SendRawAsync(
+            toEmail: user.Email,
+            subject: "Welcome to Civic Pulse",
+            htmlBody: $"<p>Hi {user.FullName},</p><p>Thank you for registering on Civic Pulse!</p><p>You can now log in and submit complaints.</p>"
+        );
+
         return MapToDto(user);
     }
 

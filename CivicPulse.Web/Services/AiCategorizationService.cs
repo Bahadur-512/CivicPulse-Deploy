@@ -81,6 +81,13 @@ public class AiCategorizationService
         string text, List<string> labels)
     {
         var token = _config["ApiKeys:HuggingFace"] ?? "";
+        
+        // Skip API call if token is missing or default
+        if (string.IsNullOrWhiteSpace(token) || token == "YOUR_HUGGINGFACE_API_KEY")
+        {
+            _logger.LogWarning("HuggingFace API key not configured. Skipping external AI call.");
+            return null;
+        }
 
         var payload = new
         {
@@ -95,37 +102,47 @@ public class AiCategorizationService
         var json = JsonSerializer.Serialize(payload);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        if (!string.IsNullOrEmpty(token))
-            _http.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        _http.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
-        var response = await _http.PostAsync(HF_API_URL, content);
-
-        if (!response.IsSuccessStatusCode)
+        // Add timeout so it doesn't hang
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        
+        try 
         {
-            _logger.LogWarning("HF API returned {code}", response.StatusCode);
+            var response = await _http.PostAsync(HF_API_URL, content, cts.Token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("HF API returned {code}", response.StatusCode);
+                return null;
+            }
+
+            var resultJson = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(resultJson);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("error", out var err))
+            {
+                _logger.LogWarning("HF API error: {err}", err.GetString());
+                return null;
+            }
+
+            var labelsArray = root.GetProperty("labels").EnumerateArray().ToList();
+            var scoresArray = root.GetProperty("scores").EnumerateArray().ToList();
+
+            if (!labelsArray.Any()) return null;
+
+            var topLabel = labelsArray[0].GetString() ?? "";
+            var topScore = scoresArray[0].GetDouble();
+
+            return (topLabel, topScore);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("HF API call failed: {msg}", ex.Message);
             return null;
         }
-
-        var resultJson = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(resultJson);
-        var root = doc.RootElement;
-
-        if (root.TryGetProperty("error", out var err))
-        {
-            _logger.LogWarning("HF API error: {err}", err.GetString());
-            return null;
-        }
-
-        var labelsArray = root.GetProperty("labels").EnumerateArray().ToList();
-        var scoresArray = root.GetProperty("scores").EnumerateArray().ToList();
-
-        if (!labelsArray.Any()) return null;
-
-        var topLabel = labelsArray[0].GetString() ?? "";
-        var topScore = scoresArray[0].GetDouble();
-
-        return (topLabel, topScore);
     }
 
     private AiCategorizationResult? KeywordFallback(

@@ -237,34 +237,40 @@ public class EmailNotificationService : IEmailNotificationService
     }
 
     // ── SEND RAW HTML EMAIL ──
-    public async Task SendRawAsync(string toEmail, string subject, string htmlBody)
+    public Task SendRawAsync(string toEmail, string subject, string htmlBody)
     {
         if (!_smtp.IsEnabled)
         {
             _logger.LogInformation("Email skipped (disabled): {subject} → {email}", subject, toEmail);
-            return;
+            return Task.CompletedTask;
         }
 
-        try
+        // Fire and forget so we don't block the UI if SMTP times out
+        _ = Task.Run(async () =>
         {
-            var message = new MimeMessage();
-            message.From.Add(new MailboxAddress(_smtp.FromName, _smtp.FromEmail));
-            message.To.Add(new MailboxAddress("", toEmail));
-            message.Subject = subject;
-            message.Body = new TextPart("html") { Text = htmlBody };
+            try
+            {
+                var message = new MimeMessage();
+                message.From.Add(new MailboxAddress(_smtp.FromName, _smtp.FromEmail));
+                message.To.Add(new MailboxAddress("", toEmail));
+                message.Subject = subject;
+                message.Body = new TextPart("html") { Text = htmlBody };
 
-            using var client = new SmtpClient();
-            await client.ConnectAsync(_smtp.Host, _smtp.Port, SecureSocketOptions.StartTls);
-            await client.AuthenticateAsync(_smtp.Username, _smtp.Password);
-            await client.SendAsync(message);
-            await client.DisconnectAsync(true);
+                using var client = new SmtpClient();
+                await client.ConnectAsync(_smtp.Host, _smtp.Port, SecureSocketOptions.StartTls);
+                await client.AuthenticateAsync(_smtp.Username, _smtp.Password);
+                await client.SendAsync(message);
+                await client.DisconnectAsync(true);
 
-            _logger.LogInformation("Email sent: {subject} → {email}", subject, toEmail);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send email to {email}: {subject}", toEmail, subject);
-        }
+                _logger.LogInformation("Email sent: {subject} → {email}", subject, toEmail);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send email to {email}: {subject}", toEmail, subject);
+            }
+        });
+        
+        return Task.CompletedTask;
     }
 
     // ── EMAIL TEMPLATE ──

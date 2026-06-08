@@ -378,8 +378,30 @@
 
     private async Task CreateUser()
     {
-        ShowCreate = false;
-        await LoadData();
+        try
+        {
+            var user = await UserService.RegisterAsync(new RegisterDto
+            {
+                FullName = NewFullName,
+                Email = NewEmail,
+                Password = NewPassword,
+                ConfirmPassword = NewPassword,
+                PhoneNumber = ""
+            });
+
+            if (NewRole == "Admin")
+            {
+                await UserService.UpdateRoleAsync(user.Id, "Admin");
+            }
+
+            ShowCreate = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            // Simple alert fallback if error
+            Console.WriteLine($"Error: {ex.Message}");
+        }
     }
 
     private async Task DisableUser(int userId)
